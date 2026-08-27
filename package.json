@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -24,8 +25,9 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@pague-co-uk/sms-gateway-db": "^3.0.13",
     "@pague-co-uk/sms-gateway-queue-client": "^0.1.3",
-    "@pague-co-uk/sms-gateway-telemetry": "github:pague-co-uk/sms-gateway-db",
+    "@pague-co-uk/sms-gateway-telemetry": "^1.0.26",
     "@prisma/client": "^6.16.3",
     "joi": "^18.2.5",
     "reflect-metadata": "^0.2.2",

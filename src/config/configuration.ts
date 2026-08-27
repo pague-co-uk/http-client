@@ -1,8 +1,12 @@
 export default () => ({
+  // ===========================================================================
+  // Application
+  // ===========================================================================
+
   app: {
     name:
       process.env.APP_NAME ??
-      "sms-gateway-routing-service",
+      "sms-gateway-http-client",
 
     version:
       process.env.APP_VERSION ??
@@ -13,10 +17,18 @@ export default () => ({
       "development",
   },
 
+  // ===========================================================================
+  // Database
+  // ===========================================================================
+
   database: {
     url:
       process.env.DATABASE_URL!,
   },
+
+  // ===========================================================================
+  // RabbitMQ
+  // ===========================================================================
 
   rabbitmq: {
     url:
@@ -24,7 +36,7 @@ export default () => ({
 
     connectionName:
       process.env.RABBITMQ_CONNECTION_NAME ??
-      "sms-gateway-routing-service",
+      "sms-gateway-http-client",
 
     heartbeat:
       Number.parseInt(
@@ -54,6 +66,7 @@ export default () => ({
           10,
         )
         : undefined,
+
     autoCreateQueues:
       process.env.RABBITMQ_AUTO_CREATE_QUEUES !==
       "false",
@@ -61,41 +74,32 @@ export default () => ({
     autoRecover:
       process.env.RABBITMQ_AUTO_RECOVER !==
       "false",
-  },
 
-  telemetry: {
-    enabled:
-      process.env.OTEL_ENABLED !==
-      "false",
-
-    serviceName:
-      process.env.OTEL_SERVICE_NAME ??
-      "sms-gateway-routing-service",
-
-    serviceVersion:
-      process.env.OTEL_SERVICE_VERSION ??
-      "1.0.0",
-
-    tracesEndpoint:
-      process.env.OTEL_TRACES_ENDPOINT!,
-
-    metricsEndpoint:
-      process.env.OTEL_METRICS_ENDPOINT!,
-
-    logsEndpoint:
-      process.env.OTEL_LOGS_ENDPOINT!,
-
-    exportIntervalMillis:
+    consumerPrefetch:
       Number.parseInt(
-        process.env.OTEL_EXPORT_INTERVAL_MILLIS ??
-        "10000",
+        process.env.RABBITMQ_CONSUMER_PREFETCH ??
+        "10",
         10,
       ),
-
-    disableFsInstrumentation:
-      process.env.OTEL_DISABLE_FS_INSTRUMENTATION ===
-      "true",
   },
+
+  // ===========================================================================
+  // Routing
+  // ===========================================================================
+
+  routing: {
+    consumerQueue:
+      process.env.ROUTING_CONSUMER_QUEUE ??
+      "sms.route.http",
+
+    resultQueue:
+      process.env.ROUTING_RESULT_QUEUE ??
+      "sms.route.result",
+  },
+
+  // ===========================================================================
+  // Logging
+  // ===========================================================================
 
   log: {
     level:
@@ -113,17 +117,48 @@ export default () => ({
 
       path:
         process.env.LOG_FILE_PATH ??
-        "/var/log/routing-service/application.log",
+        "/var/log/http-client/application.log",
     },
   },
 
-  routing: {
-    consumerQueue:
-      process.env.ROUTING_CONSUMER_QUEUE ??
-      "sms.routing",
-    resultQueue:
-      process.env.ROUTING_RESULT_QUEUE ??
-      "routing.results",
-  },
+  // ===========================================================================
+  // OpenTelemetry
+  // ===========================================================================
 
+  telemetry: {
+    enabled:
+      process.env.OTEL_ENABLED !==
+      "false",
+
+    serviceName:
+      process.env.OTEL_SERVICE_NAME ??
+      "sms-gateway-http-client",
+
+    serviceVersion:
+      process.env.OTEL_SERVICE_VERSION ??
+      "1.0.0",
+
+    tracesEndpoint:
+      process.env.OTEL_TRACES_ENDPOINT ??
+      "",
+
+    metricsEndpoint:
+      process.env.OTEL_METRICS_ENDPOINT ??
+      "",
+
+    logsEndpoint:
+      process.env.OTEL_LOGS_ENDPOINT ??
+      "",
+
+    exportIntervalMillis:
+      Number.parseInt(
+        process.env.OTEL_EXPORT_INTERVAL_MILLIS ??
+        "10000",
+        10,
+      ),
+
+    disableFsInstrumentation:
+      process.env.OTEL_DISABLE_FS_INSTRUMENTATION ===
+      "true",
+  },
 });

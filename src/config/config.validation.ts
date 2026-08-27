@@ -18,7 +18,7 @@ export const configValidationSchema =
     APP_NAME:
       Joi.string()
         .default(
-          "sms-gateway-routing-service",
+          "sms-gateway-http-client",
         ),
 
     APP_VERSION:
@@ -44,7 +44,7 @@ export const configValidationSchema =
     RABBITMQ_CONNECTION_NAME:
       Joi.string()
         .default(
-          "sms-gateway-routing-service",
+          "sms-gateway-http-client",
         ),
 
     RABBITMQ_HEARTBEAT:
@@ -70,17 +70,37 @@ export const configValidationSchema =
         .integer()
         .min(1)
         .optional(),
+
     RABBITMQ_AUTO_CREATE_QUEUES:
       Joi.boolean()
-        .truthy("true", "1")
-        .falsy("false", "0")
+        .truthy(
+          "true",
+          "1",
+        )
+        .falsy(
+          "false",
+          "0",
+        )
         .default(true),
 
     RABBITMQ_AUTO_RECOVER:
       Joi.boolean()
-        .truthy("true", "1")
-        .falsy("false", "0")
+        .truthy(
+          "true",
+          "1",
+        )
+        .falsy(
+          "false",
+          "0",
+        )
         .default(true),
+
+    RABBITMQ_CONSUMER_PREFETCH:
+      Joi.number()
+        .integer()
+        .min(1)
+        .max(1000)
+        .default(10),
 
     // =========================================================================
     // Routing
@@ -88,17 +108,11 @@ export const configValidationSchema =
 
     ROUTING_CONSUMER_QUEUE:
       Joi.string()
-        .default("sms.routing"),
+        .required(),
+
     ROUTING_RESULT_QUEUE:
       Joi.string()
-        .default("routing.results"),
-
-    ROUTING_CONSUMER_PREFETCH:
-      Joi.number()
-        .integer()
-        .min(1)
-        .max(1000)
-        .default(10),
+        .required(),
 
     // =========================================================================
     // Logging
@@ -143,7 +157,7 @@ export const configValidationSchema =
     LOG_FILE_PATH:
       Joi.string()
         .default(
-          "/var/log/routing-service/application.log",
+          "/var/log/http-client/application.log",
         ),
 
     // =========================================================================
@@ -165,7 +179,7 @@ export const configValidationSchema =
     OTEL_SERVICE_NAME:
       Joi.string()
         .default(
-          "sms-gateway-routing-service",
+          "sms-gateway-http-client",
         ),
 
     OTEL_SERVICE_VERSION:
