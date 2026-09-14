@@ -1,18 +1,18 @@
 import type {
   HttpConnectorConfiguration,
-} from "../types/http-connector-configuration.js";
+} from "../../types/http-connector-configuration.js";
 
 import type {
   HttpDeliveryReceipt,
-} from "../types/http-delivery-receipt.js";
+} from "../../types/http-delivery-receipt.js";
 
 import type {
   HttpSubmissionResult,
-} from "../types/http-submission-result.js";
+} from "../../types/http-submission-result.js";
 
 import type {
   OutboundSms,
-} from "../types/outbound-sms.js";
+} from "../../types/outbound-sms.js";
 
 export interface HttpSmsProvider<
   TRawData = Record<string, unknown>,

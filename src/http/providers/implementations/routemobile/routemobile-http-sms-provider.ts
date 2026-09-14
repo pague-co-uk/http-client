@@ -34,11 +34,11 @@ import type {
 
 import {
   HttpSmsProvider,
-} from "./http-sms-provider.decorator.js";
+} from "./core/http-sms-provider.decorator.js";
 
 import type {
   HttpSmsProvider as HttpSmsProviderContract,
-} from "./http-sms-provider.js";
+} from "./core/http-sms-provider.js";
 
 interface RouteMobileProviderConfiguration {
   username: string;

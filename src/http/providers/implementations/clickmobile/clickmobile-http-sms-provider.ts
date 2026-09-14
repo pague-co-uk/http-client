@@ -4,46 +4,50 @@ import {
 
 import {
   HttpClient,
-} from "../http.client.js";
+} from "../../../http.client.js";
 
 import type {
   HttpConnectorConfiguration,
-} from "../types/http-connector-configuration.js";
+} from "../../../types/http-connector-configuration.js";
 
 import type {
   HttpRequestResult,
-} from "../types/http-request-result.js";
+} from "../../../types/http-request-result.js";
 
 import type {
   HttpSubmissionResult,
-} from "../types/http-submission-result.js";
+} from "../../../types/http-submission-result.js";
 
 import type {
   OutboundSms,
-} from "../types/outbound-sms.js";
+} from "../../../types/outbound-sms.js";
 
 import {
   HttpSmsProvider,
-} from "./http-sms-provider.decorator.js";
+} from "../../core/http-sms-provider.decorator.js";
 
-import { HttpDeliveryReceipt } from "../types/http-delivery-receipt.js";
+import type {
+  HttpDeliveryReceipt,
+} from "../../../types/http-delivery-receipt.js";
+
 import type {
   HttpSmsProvider as HttpSmsProviderContract,
-} from "./http-sms-provider.js";
+} from "../../core/http-sms-provider.js";
 
 @HttpSmsProvider(
-  "connect-mobile",
+  "click-mobile",
 )
 @Injectable()
-export class ConnectMobileHttpSmsProvider
+export class ClickMobileAngolaHttpSmsProvider
   implements HttpSmsProviderContract {
   constructor(
     private readonly http:
       HttpClient,
   ) { }
-  processDlr(connectorId: string, payload: unknown, configuration: HttpConnectorConfiguration): Promise<HttpDeliveryReceipt> {
-    throw new Error("Method not implemented.");
-  }
+
+  // ===========================================================================
+  // Send
+  // ===========================================================================
 
   async send(
     connectorId: string,
@@ -58,14 +62,17 @@ export class ConnectMobileHttpSmsProvider
         configuration,
 
         body: {
-          da:
+          from:
+            sms.sender,
+
+          to:
             sms.destination,
 
-          ud:
-            sms.body,
-
-          id:
+          refId:
             sms.messageId,
+
+          message:
+            sms.body,
         },
       });
 
@@ -73,6 +80,10 @@ export class ConnectMobileHttpSmsProvider
       response,
     );
   }
+
+  // ===========================================================================
+  // Response
+  // ===========================================================================
 
   private translateResponse(
     response:
@@ -135,5 +146,29 @@ export class ConnectMobileHttpSmsProvider
             response.errorMessage,
         };
     }
+  }
+
+  // ===========================================================================
+  // DLR
+  // ===========================================================================
+
+  identifyDlr(
+    payload:
+      Record<string, unknown>,
+  ): string | null {
+    return null;
+  }
+
+  async processDlr(
+    payload:
+      Record<string, unknown>,
+    configuration:
+      HttpConnectorConfiguration,
+  ): Promise<
+    HttpDeliveryReceipt
+  > {
+    throw new Error(
+      "Click Mobile DLR processing is not implemented.",
+    );
   }
 }

@@ -18,11 +18,11 @@ import {
 
 import {
   HttpSmsProviderRegistry,
-} from "../providers/http-sms-provider-registry.js";
+} from "../providers/core/http-sms-provider-registry.js";
 
 import type {
   HttpSmsProvider,
-} from "../providers/http-sms-provider.js";
+} from "../providers/core/http-sms-provider.js";
 
 import type {
   HttpDeliveryReceipt,
