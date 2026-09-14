@@ -25,6 +25,17 @@ export const configValidationSchema =
       Joi.string()
         .default("1.0.0"),
 
+    APP_HOST:
+      Joi.string()
+        .default("0.0.0.0"),
+
+    APP_PORT:
+      Joi.number()
+        .integer()
+        .min(1)
+        .max(65535)
+        .default(9001),
+
     // =========================================================================
     // Database
     // =========================================================================
@@ -69,19 +80,8 @@ export const configValidationSchema =
       Joi.number()
         .integer()
         .min(1)
+        .empty("")
         .optional(),
-
-    RABBITMQ_AUTO_CREATE_QUEUES:
-      Joi.boolean()
-        .truthy(
-          "true",
-          "1",
-        )
-        .falsy(
-          "false",
-          "0",
-        )
-        .default(true),
 
     RABBITMQ_AUTO_RECOVER:
       Joi.boolean()
@@ -113,6 +113,12 @@ export const configValidationSchema =
     ROUTING_RESULT_QUEUE:
       Joi.string()
         .required(),
+
+    ROUTING_DELIVERY_RECEIPT_QUEUE:
+      Joi.string()
+        .default(
+          "sms.route.delivery-receipt",
+        ),
 
     // =========================================================================
     // Logging
@@ -157,7 +163,7 @@ export const configValidationSchema =
     LOG_FILE_PATH:
       Joi.string()
         .default(
-          "/var/log/http-client/application.log",
+          "/var/log/pague/sms-gateway-http-client/application.log",
         ),
 
     // =========================================================================

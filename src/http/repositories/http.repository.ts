@@ -62,6 +62,16 @@ export class HttpRepository
     });
   }
 
+  async findAttemptByProviderMessageId(
+    providerMessageId: string,
+  ) {
+    return this.db.messageRouteAttempt.findFirst({
+      where: {
+        providerMessageId,
+      },
+    });
+  }
+
   // ===========================================================================
   // Connector
   // ===========================================================================

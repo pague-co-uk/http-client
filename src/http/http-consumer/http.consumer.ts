@@ -10,6 +10,10 @@ import type {
 } from "@pague-co-uk/sms-gateway-queue-client";
 
 import {
+  QueueProcessingError,
+} from "@pague-co-uk/sms-gateway-queue-client";
+
+import {
   getComponentLogger,
   recordException,
   withSpan,
@@ -23,16 +27,29 @@ import {
   QUEUE_CLIENT,
 } from "../../queue/constants/queue.constants.js";
 
-import { ConnectorResultPublisher } from "../publishers/connector-result.publisher.js";
+import {
+  ConnectorResultPublisher,
+} from "../publishers/connector-result.publisher.js";
 
 import {
   HttpRepository,
 } from "../repositories/http.repository.js";
 
-import { parseHttpConnectorConfiguration } from "../http-connector-config.js";
-import { HttpSmsProviderRegistry } from "../providers/http-sms-provider-registry.js";
-import { OutboundSms } from "../types/outbound-sms.js";
-import { RoutingResult } from "../types/routing-result.js";
+import {
+  parseHttpConnectorConfiguration,
+} from "../http-connector-config.js";
+
+import {
+  HttpSmsProviderRegistry,
+} from "../providers/http-sms-provider-registry.js";
+
+import {
+  OutboundSms,
+} from "../types/outbound-sms.js";
+
+import {
+  RoutingResult,
+} from "../types/routing-result.js";
 
 interface ConnectorMessage {
   messageId: string;
@@ -84,7 +101,7 @@ export class HttpConsumer
           this.config.routing.consumerQueue,
 
         prefetch:
-          this.config.rabbitmq.consumerPrefetch
+          this.config.rabbitmq.consumerPrefetch,
       },
       "HTTP consumer starting.",
     );
@@ -190,17 +207,39 @@ export class HttpConsumer
       "Binding HTTP consumer to RabbitMQ queue.",
     );
 
+    /*
+     * No retry policy is supplied here.
+     *
+     * The queue client therefore applies its
+     * default reliability policy:
+     *
+     * - 10 retries after the initial delivery
+     * - exponential backoff
+     * - 1 second initial delay
+     * - 30 second maximum delay
+     * - dead-letter queue after retries are exhausted
+     *
+     * QueueProcessingError with requeue:false
+     * bypasses retries and sends the message
+     * directly to the DLQ.
+     */
     const consumer =
       await this.queue.subscribe<ConnectorMessage>(
         this.config.routing.consumerQueue,
 
         async (message) => {
           /*
-           * The RabbitMQ message is acknowledged only after:
+           * The RabbitMQ message is acknowledged
+           * by ManagedQueue only after this handler
+           * completes successfully.
            *
-           * 1. The HTTP provider has produced a submission outcome.
-           * 2. That outcome has been successfully published to the
-           *    routing result queue.
+           * Expected connector/provider failures
+           * publish a FAILED/UNKNOWN routing result
+           * and return normally.
+           *
+           * Unexpected/infrastructure failures are
+           * allowed to throw so ManagedQueue can apply
+           * its retry policy.
            */
 
           if (!this.running) {
@@ -213,15 +252,7 @@ export class HttpConsumer
             message,
           );
         },
-
-        {
-          noAck: false,
-
-          prefetch:
-            this.config.rabbitmq.consumerPrefetch,
-        },
       );
-
     this.logger.info(
       {
         queue:
@@ -237,6 +268,7 @@ export class HttpConsumer
   // ===========================================================================
   // Message handling
   // ===========================================================================
+
   private async handleMessage(
     message: ConnectorMessage,
   ): Promise<void> {
@@ -305,7 +337,18 @@ export class HttpConsumer
             "Routing attempt not found.",
           );
 
-          throw error;
+          /*
+           * There is no valid routing attempt to attach
+           * a routing result to. This is a permanent
+           * message/data error, so do not retry.
+           */
+          throw new QueueProcessingError(
+            error.message,
+            {
+              requeue: false,
+              cause: error,
+            },
+          );
         }
 
         // =======================================================================
@@ -323,7 +366,30 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              routeId:
+                message.routeId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Routing attempt message identity mismatch.",
+          );
+
+          throw new QueueProcessingError(
+            error.message,
+            {
+              requeue: false,
+              cause: error,
+            },
+          );
         }
 
         if (
@@ -337,7 +403,30 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              routeId:
+                message.routeId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Routing attempt route identity mismatch.",
+          );
+
+          throw new QueueProcessingError(
+            error.message,
+            {
+              requeue: false,
+              cause: error,
+            },
+          );
         }
 
         if (
@@ -351,7 +440,30 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              routeId:
+                message.routeId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Routing attempt connector identity mismatch.",
+          );
+
+          throw new QueueProcessingError(
+            error.message,
+            {
+              requeue: false,
+              cause: error,
+            },
+          );
         }
 
         // =======================================================================
@@ -371,7 +483,27 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Message not found for HTTP submission.",
+          );
+
+          throw new QueueProcessingError(
+            error.message,
+            {
+              requeue: false,
+              cause: error,
+            },
+          );
         }
 
         // =======================================================================
@@ -386,7 +518,28 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                sms.id,
+
+              attemptId:
+                attempt.id,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Message has no sender ID.",
+          );
+
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "MESSAGE_SENDER_ID_MISSING",
+            error.message,
+          );
+
+          return;
         }
 
         if (!sms.senderId.sender) {
@@ -397,7 +550,28 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                sms.id,
+
+              attemptId:
+                attempt.id,
+
+              connectorId:
+                message.connectorId,
+            },
+            "Message has an empty sender address.",
+          );
+
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "MESSAGE_SENDER_ADDRESS_MISSING",
+            error.message,
+          );
+
+          return;
         }
 
         // =======================================================================
@@ -417,7 +591,28 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "HTTP connector not found.",
+          );
+
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "HTTP_CONNECTOR_NOT_FOUND",
+            error.message,
+          );
+
+          return;
         }
 
         // =======================================================================
@@ -432,7 +627,28 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "HTTP connector has no configuration.",
+          );
+
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "HTTP_CONNECTOR_CONFIGURATION_MISSING",
+            error.message,
+          );
+
+          return;
         }
 
         // =======================================================================
@@ -450,20 +666,38 @@ export class HttpConsumer
 
           recordException(error);
 
-          throw error;
-        }
+          this.logger.error(
+            {
+              messageId:
+                message.messageId,
 
-        const provider =
-          this.providerRegistry.get(
-            providerCode,
+              attemptId:
+                message.attemptId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "HTTP connector has no provider code.",
           );
 
-        if (!provider) {
-          const error =
-            new Error(
-              `No HTTP provider is registered for provider code '${providerCode}'.`,
-            );
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "HTTP_PROVIDER_CODE_MISSING",
+            error.message,
+          );
 
+          return;
+        }
+
+        let provider;
+
+        try {
+          provider =
+            this.providerRegistry.get(
+              providerCode,
+            );
+        } catch (error) {
           recordException(error);
 
           this.logger.error(
@@ -478,11 +712,21 @@ export class HttpConsumer
                 message.connectorId,
 
               providerCode,
+
+              err:
+                error,
             },
             "HTTP provider could not be resolved.",
           );
 
-          throw error;
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "HTTP_PROVIDER_NOT_REGISTERED",
+            `HTTP provider '${providerCode}' is not registered.`,
+          );
+
+          return;
         }
 
         // =======================================================================
@@ -519,10 +763,46 @@ export class HttpConsumer
         // Parse connector configuration
         // =======================================================================
 
-        const configuration =
-          parseHttpConnectorConfiguration(
-            connector.configuration,
+        let configuration;
+
+        try {
+          configuration =
+            parseHttpConnectorConfiguration(
+              connector.configuration,
+            );
+        } catch (error) {
+          recordException(error);
+
+          this.logger.error(
+            {
+              messageId:
+                sms.id,
+
+              attemptId:
+                attempt.id,
+
+              connectorId:
+                message.connectorId,
+
+              providerCode,
+
+              err:
+                error,
+            },
+            "HTTP connector configuration is invalid.",
           );
+
+          await this.publishFailure(
+            message,
+            "FAILED",
+            "HTTP_CONNECTOR_CONFIGURATION_INVALID",
+            error instanceof Error
+              ? error.message
+              : "HTTP connector configuration is invalid.",
+          );
+
+          return;
+        }
 
         // =======================================================================
         // Submit SMS through provider
@@ -580,24 +860,43 @@ export class HttpConsumer
         // =======================================================================
 
         const base = {
-          messageId: message.messageId,
-          attemptId: message.attemptId,
-          routeId: message.routeId,
-          connectorId: message.connectorId,
+          messageId:
+            message.messageId,
+
+          attemptId:
+            message.attemptId,
+
+          routeId:
+            message.routeId,
+
+          connectorId:
+            message.connectorId,
         };
 
-        const routingResult: RoutingResult =
-          submission.status === "SUBMITTED"
+        const routingResult:
+          RoutingResult =
+          submission.status ===
+            "SUBMITTED"
             ? {
               ...base,
-              status: submission.status,
-              providerMessageId: submission.providerMessageId,
+
+              status:
+                submission.status,
+
+              providerMessageId:
+                submission.providerMessageId,
             }
             : {
               ...base,
-              status: submission.status,
-              errorCode: submission.errorCode,
-              errorMessage: submission.errorMessage,
+
+              status:
+                submission.status,
+
+              errorCode:
+                submission.errorCode,
+
+              errorMessage:
+                submission.errorMessage,
             };
 
         // =======================================================================
@@ -631,8 +930,11 @@ export class HttpConsumer
             status:
               submission.status,
 
-            providerMessageId: submission.status == "SUBMITTED" ?
-              submission.providerMessageId : null,
+            providerMessageId:
+              submission.status ===
+                "SUBMITTED"
+                ? submission.providerMessageId
+                : null,
           },
           "HTTP submission result published.",
         );
@@ -640,4 +942,62 @@ export class HttpConsumer
     );
   }
 
+  // ===========================================================================
+  // Failure result
+  // ===========================================================================
+
+  private async publishFailure(
+    message: ConnectorMessage,
+    status:
+      | "FAILED"
+      | "UNKNOWN",
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<void> {
+    const routingResult:
+      RoutingResult = {
+      messageId:
+        message.messageId,
+
+      attemptId:
+        message.attemptId,
+
+      routeId:
+        message.routeId,
+
+      connectorId:
+        message.connectorId,
+
+      status,
+
+      errorCode,
+
+      errorMessage,
+    };
+
+    await this.resultPublisher.publish(
+      routingResult,
+    );
+
+    this.logger.info(
+      {
+        messageId:
+          message.messageId,
+
+        attemptId:
+          message.attemptId,
+
+        routeId:
+          message.routeId,
+
+        connectorId:
+          message.connectorId,
+
+        status,
+
+        errorCode,
+      },
+      "HTTP connector failure result published.",
+    );
+  }
 }

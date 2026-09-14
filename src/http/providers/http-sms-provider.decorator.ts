@@ -8,16 +8,41 @@ export const HTTP_SMS_PROVIDER =
   );
 
 export function HttpSmsProvider(
-  code: string,
+  ...codes: string[]
 ): ClassDecorator {
-  if (!code.trim()) {
+
+  if (
+    codes.length === 0
+  ) {
     throw new Error(
-      "HTTP SMS provider code cannot be empty.",
+      "At least one HTTP SMS provider code must be specified.",
     );
   }
 
+  const normalizedCodes =
+    codes.map(
+      (code) => code.trim(),
+    );
+
+  if (
+    normalizedCodes.some(
+      (code) => !code,
+    )
+  ) {
+    throw new Error(
+      "HTTP SMS provider codes cannot be empty.",
+    );
+  }
+
+  const uniqueCodes =
+    [
+      ...new Set(
+        normalizedCodes,
+      ),
+    ];
+
   return SetMetadata(
     HTTP_SMS_PROVIDER,
-    code,
+    uniqueCodes,
   );
 }

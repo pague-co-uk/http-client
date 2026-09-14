@@ -33,6 +33,16 @@ export class AppConfigService {
         this.config.getOrThrow<string>(
           "app.environment",
         ),
+
+      host:
+        this.config.getOrThrow<string>(
+          "app.host",
+        ),
+
+      port:
+        this.config.getOrThrow<number>(
+          "app.port",
+        ),
     };
   }
 
@@ -82,11 +92,6 @@ export class AppConfigService {
           "rabbitmq.maxReconnectAttempts",
         ),
 
-      autoCreateQueues:
-        this.config.getOrThrow<boolean>(
-          "rabbitmq.autoCreateQueues",
-        ),
-
       autoRecover:
         this.config.getOrThrow<boolean>(
           "rabbitmq.autoRecover",
@@ -113,6 +118,10 @@ export class AppConfigService {
       resultQueue:
         this.config.getOrThrow<string>(
           "routing.resultQueue",
+        ),
+      deliveryReceiptQueue:
+        this.config.getOrThrow<string>(
+          "routing.deliveryReceiptQueue",
         ),
     };
   }

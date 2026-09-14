@@ -15,6 +15,17 @@ export default () => ({
     environment:
       process.env.NODE_ENV ??
       "development",
+
+    host:
+      process.env.APP_HOST ??
+      "0.0.0.0",
+
+    port:
+      Number.parseInt(
+        process.env.APP_PORT ??
+        "9001",
+        10,
+      ),
   },
 
   // ===========================================================================
@@ -67,10 +78,6 @@ export default () => ({
         )
         : undefined,
 
-    autoCreateQueues:
-      process.env.RABBITMQ_AUTO_CREATE_QUEUES !==
-      "false",
-
     autoRecover:
       process.env.RABBITMQ_AUTO_RECOVER !==
       "false",
@@ -95,6 +102,10 @@ export default () => ({
     resultQueue:
       process.env.ROUTING_RESULT_QUEUE ??
       "sms.route.result",
+
+    deliveryReceiptQueue:
+      process.env.ROUTING_DELIVERY_RECEIPT_QUEUE ??
+      "sms.route.delivery-receipt",
   },
 
   // ===========================================================================
@@ -117,7 +128,7 @@ export default () => ({
 
       path:
         process.env.LOG_FILE_PATH ??
-        "/var/log/http-client/application.log",
+        "/var/log/pague/sms-gateway-http-client/application.log",
     },
   },
 

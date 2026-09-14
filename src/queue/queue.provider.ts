@@ -52,9 +52,6 @@ export const queueProvider: Provider = {
       maxReconnectAttempts:
         config.rabbitmq.maxReconnectAttempts,
 
-      autoCreateQueues:
-        config.rabbitmq.autoCreateQueues,
-
       autoRecover:
         config.rabbitmq.autoRecover,
     });

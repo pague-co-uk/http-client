@@ -196,7 +196,7 @@ export class HttpSubmissionService {
             0,
         });
 
-        this.logger.info( 
+        this.logger.info(
           {
             connectorId:
               connector.id,

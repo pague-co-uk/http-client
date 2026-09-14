@@ -27,6 +27,10 @@ import {
 } from "./http-sms-provider.decorator.js";
 
 import type {
+  HttpDeliveryReceipt,
+} from "../types/http-delivery-receipt.js";
+
+import type {
   HttpSmsProvider as HttpSmsProviderContract,
 } from "./http-sms-provider.js";
 
@@ -40,6 +44,10 @@ export class ClickMobileAngolaHttpSmsProvider
     private readonly http:
       HttpClient,
   ) { }
+
+  // ===========================================================================
+  // Send
+  // ===========================================================================
 
   async send(
     connectorId: string,
@@ -72,6 +80,10 @@ export class ClickMobileAngolaHttpSmsProvider
       response,
     );
   }
+
+  // ===========================================================================
+  // Response
+  // ===========================================================================
 
   private translateResponse(
     response:
@@ -134,5 +146,29 @@ export class ClickMobileAngolaHttpSmsProvider
             response.errorMessage,
         };
     }
+  }
+
+  // ===========================================================================
+  // DLR
+  // ===========================================================================
+
+  identifyDlr(
+    payload:
+      Record<string, unknown>,
+  ): string | null {
+    return null;
+  }
+
+  async processDlr(
+    payload:
+      Record<string, unknown>,
+    configuration:
+      HttpConnectorConfiguration,
+  ): Promise<
+    HttpDeliveryReceipt
+  > {
+    throw new Error(
+      "Click Mobile DLR processing is not implemented.",
+    );
   }
 }

@@ -26,6 +26,7 @@ import {
   HttpSmsProvider,
 } from "./http-sms-provider.decorator.js";
 
+import { HttpDeliveryReceipt } from "../types/http-delivery-receipt.js";
 import type {
   HttpSmsProvider as HttpSmsProviderContract,
 } from "./http-sms-provider.js";
@@ -40,6 +41,9 @@ export class ImartHttpSmsProvider
     private readonly http:
       HttpClient,
   ) { }
+  processDlr(connectorId: string, payload: unknown, configuration: HttpConnectorConfiguration): Promise<HttpDeliveryReceipt> {
+    throw new Error("Method not implemented.");
+  }
 
   async send(
     connectorId: string,

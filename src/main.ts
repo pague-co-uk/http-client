@@ -85,12 +85,17 @@ async function bootstrap(): Promise<void> {
   ]);
 
   const app =
-    await NestFactory.createApplicationContext(
+    await NestFactory.create(
       AppModule,
     );
 
   app.useLogger(
     new TelemetryLogger(),
+  );
+
+  await app.listen(
+    config.app.port,
+    config.app.host,
   );
 
   logger.info(
@@ -104,14 +109,22 @@ async function bootstrap(): Promise<void> {
       environment:
         config.app.environment,
 
+      host:
+        config.app.host,
+
+      port:
+        config.app.port,
+
+      healthEndpoint:
+        "/health",
+
       consumerQueue:
         config.routing.consumerQueue,
 
       resultQueue:
         config.routing.resultQueue,
-
     },
-    "Http client started successfully.",
+    "HTTP client started successfully.",
   );
 
   // =========================================================================
@@ -126,7 +139,7 @@ async function bootstrap(): Promise<void> {
         {
           signal,
         },
-        "Shutting down Http client.",
+        "Shutting down HTTP client.",
       );
 
       try {

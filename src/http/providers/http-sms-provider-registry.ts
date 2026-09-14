@@ -15,6 +15,11 @@ import type {
   HttpSmsProvider,
 } from "./http-sms-provider.js";
 
+export interface HttpDlrProviderMatch {
+  provider: HttpSmsProvider;
+  providerMessageId: string;
+}
+
 @Injectable()
 export class HttpSmsProviderRegistry
   implements OnModuleInit {
@@ -28,6 +33,10 @@ export class HttpSmsProviderRegistry
     private readonly discovery:
       DiscoveryService,
   ) { }
+
+  // ===========================================================================
+  // Provider discovery
+  // ===========================================================================
 
   onModuleInit(): void {
     const wrappers =
@@ -46,15 +55,19 @@ export class HttpSmsProviderRegistry
       const constructor =
         instance.constructor;
 
-      const code =
+      const codes =
         Reflect.getMetadata(
           HTTP_SMS_PROVIDER,
           constructor,
         );
 
       if (
-        typeof code !==
-        "string"
+        !Array.isArray(codes) ||
+        codes.some(
+          (code) =>
+            typeof code !==
+            "string",
+        )
       ) {
         continue;
       }
@@ -64,26 +77,52 @@ export class HttpSmsProviderRegistry
         "function"
       ) {
         throw new Error(
-          `HTTP SMS provider '${code}' does not implement send().`,
+          `HTTP SMS provider '${codes.join(", ")}' does not implement send().`,
         );
       }
 
       if (
-        this.providers.has(
-          code,
-        )
+        typeof instance.identifyDlr !==
+        "function"
       ) {
         throw new Error(
-          `HTTP SMS provider '${code}' is registered more than once.`,
+          `HTTP SMS provider '${codes.join(", ")}' does not implement identifyDlr().`,
         );
       }
 
-      this.providers.set(
-        code,
-        instance as HttpSmsProvider,
-      );
+      if (
+        typeof instance.processDlr !==
+        "function"
+      ) {
+        throw new Error(
+          `HTTP SMS provider '${codes.join(", ")}' does not implement processDlr().`,
+        );
+      }
+
+      for (
+        const code of codes
+      ) {
+        if (
+          this.providers.has(
+            code,
+          )
+        ) {
+          throw new Error(
+            `HTTP SMS provider '${code}' is registered more than once.`,
+          );
+        }
+
+        this.providers.set(
+          code,
+          instance as HttpSmsProvider,
+        );
+      }
     }
   }
+
+  // ===========================================================================
+  // Resolve provider by code
+  // ===========================================================================
 
   get(
     code: string,
@@ -102,6 +141,46 @@ export class HttpSmsProviderRegistry
     return provider;
   }
 
+  // ===========================================================================
+  // Identify DLR provider candidates
+  // ===========================================================================
+
+  identifyDlr(
+    payload: Record<string, unknown>,
+  ): HttpDlrProviderMatch[] {
+    const matches:
+      HttpDlrProviderMatch[] = [];
+
+    for (
+      const provider of
+      new Set(
+        this.providers.values(),
+      )
+    ) {
+      const providerMessageId =
+        provider.identifyDlr(
+          payload,
+        );
+
+      if (
+        !providerMessageId
+      ) {
+        continue;
+      }
+
+      matches.push({
+        provider,
+        providerMessageId,
+      });
+    }
+
+    return matches;
+  }
+
+  // ===========================================================================
+  // Provider existence
+  // ===========================================================================
+
   has(
     code: string,
   ): boolean {
@@ -109,6 +188,10 @@ export class HttpSmsProviderRegistry
       code,
     );
   }
+
+  // ===========================================================================
+  // Registered provider names
+  // ===========================================================================
 
   getNames(): string[] {
     return [

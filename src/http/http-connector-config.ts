@@ -9,7 +9,8 @@ export function parseHttpConnectorConfiguration(
 ): HttpConnectorConfiguration {
   if (
     !configuration ||
-    typeof configuration !== "object"
+    typeof configuration !== "object" ||
+    Array.isArray(configuration)
   ) {
     throw new Error(
       "HTTP connector configuration is missing or invalid.",
@@ -135,6 +136,62 @@ export function parseHttpConnectorConfiguration(
     );
   }
 
+  // ===========================================================================
+  // Provider-specific configuration
+  //
+  // Everything that is not part of the generic HTTP connector configuration
+  // is preserved here.
+  //
+  // Example RouteMobile configuration:
+  //
+  // {
+  //   username: "...",
+  //   password: "...",
+  //   type: "0",
+  //   dlr: "1"
+  // }
+  // ===========================================================================
+
+  const providerConfiguration:
+    Record<string, unknown> = {};
+
+  const genericConfigurationKeys =
+    new Set([
+      "baseUrl",
+      "sendPath",
+      "method",
+      "authentication",
+      "connectTimeout",
+      "requestTimeout",
+      "reconnectDelay",
+      "maxReconnectDelay",
+      "headers",
+    ]);
+
+  for (
+    const [
+      key,
+      providerValue,
+    ] of Object.entries(
+      value,
+    )
+  ) {
+    if (
+      genericConfigurationKeys.has(
+        key,
+      )
+    ) {
+      continue;
+    }
+
+    providerConfiguration[key] =
+      providerValue;
+  }
+
+  // ===========================================================================
+  // Return normalized configuration
+  // ===========================================================================
+
   return {
     baseUrl,
 
@@ -154,6 +211,8 @@ export function parseHttpConnectorConfiguration(
     maxReconnectDelay,
 
     headers,
+
+    providerConfiguration,
   };
 }
 
@@ -226,7 +285,8 @@ function parseAuthentication(
   }
 
   if (
-    typeof value !== "object"
+    typeof value !== "object" ||
+    Array.isArray(value)
   ) {
     throw new Error(
       "HTTP connector authentication must be an object.",
@@ -339,6 +399,7 @@ function parseAuthentication(
           authentication.password,
       };
     }
+
     case "CUSTOM": {
       const headers =
         parseHeaders(
