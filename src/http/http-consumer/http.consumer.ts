@@ -651,9 +651,9 @@ export class HttpConsumer
           return;
         }
 
-        // =======================================================================
+        // ===========================================================================
         // Resolve provider
-        // =======================================================================
+        // ===========================================================================
 
         const providerCode =
           connector.provider;
@@ -669,10 +669,10 @@ export class HttpConsumer
           this.logger.error(
             {
               messageId:
-                message.messageId,
+                sms.id,
 
               attemptId:
-                message.attemptId,
+                attempt.id,
 
               connectorId:
                 message.connectorId,
@@ -697,6 +697,25 @@ export class HttpConsumer
             this.providerRegistry.get(
               providerCode,
             );
+
+          this.logger.info(
+            {
+              messageId:
+                sms.id,
+
+              attemptId:
+                attempt.id,
+
+              routeId:
+                message.routeId,
+
+              connectorId:
+                message.connectorId,
+
+              providerCode,
+            },
+            "HTTP SMS provider resolved.",
+          );
         } catch (error) {
           recordException(error);
 
@@ -728,7 +747,6 @@ export class HttpConsumer
 
           return;
         }
-
         // =======================================================================
         // Build normalized outbound SMS
         // =======================================================================
