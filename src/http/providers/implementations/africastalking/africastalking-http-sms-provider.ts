@@ -3,6 +3,10 @@ import {
 } from "@nestjs/common";
 
 import {
+  getComponentLogger,
+} from "@pague-co-uk/sms-gateway-telemetry";
+
+import {
   HttpClient,
 } from "../../../http.client.js";
 
@@ -37,11 +41,16 @@ import type {
 @HttpSmsProvider(
   "africastalking-cameroon",
   "africastalking-kenya",
-  "africastalking-ghana"
+  "africastalking-ghana",
 )
 @Injectable()
 export class AfricasTalkingHttpSmsProvider
   implements HttpSmsProviderContract {
+  private readonly logger =
+    getComponentLogger(
+      AfricasTalkingHttpSmsProvider.name,
+    );
+
   constructor(
     private readonly http:
       HttpClient,
@@ -57,32 +66,133 @@ export class AfricasTalkingHttpSmsProvider
     configuration:
       HttpConnectorConfiguration,
   ): Promise<HttpSubmissionResult> {
-    const response =
-      await this.http.request({
+    this.logger.info(
+      {
         connectorId,
 
-        configuration,
+        provider:
+          "africastalking",
 
-        body: {
-          username:
-            this.getUsername(
-              configuration,
-            ),
+        messageId:
+          sms.messageId,
 
-          to:
+        destination:
+          sms.destination,
+
+        sender:
+          sms.sender,
+
+        encoding:
+          sms.encoding,
+
+        segmentCount:
+          sms.segmentCount,
+      },
+      "Africa's Talking provider request starting.",
+    );
+
+    let response:
+      HttpRequestResult;
+
+    try {
+      response =
+        await this.http.request({
+          connectorId,
+
+          configuration,
+
+          body: {
+            username:
+              this.getUsername(
+                configuration,
+              ),
+
+            to:
+              sms.destination,
+
+            message:
+              sms.body,
+
+            senderId:
+              sms.sender,
+          },
+        });
+    } catch (error) {
+      this.logger.error(
+        {
+          connectorId,
+
+          provider:
+            "africastalking",
+
+          messageId:
+            sms.messageId,
+
+          destination:
             sms.destination,
 
-          message:
-            sms.body,
-
-          senderId:
-            sms.sender,
+          err:
+            error,
         },
-      });
+        "Africa's Talking provider request failed.",
+      );
 
-    return this.translateResponse(
-      response,
+      throw error;
+    }
+
+    this.logger.info(
+      {
+        connectorId,
+
+        provider:
+          "africastalking",
+
+        messageId:
+          sms.messageId,
+
+        status:
+          response.status,
+      },
+      "Africa's Talking provider HTTP request returned.",
     );
+
+    const result =
+      this.translateResponse(
+        response,
+      );
+
+    this.logger.info(
+      {
+        connectorId,
+
+        provider:
+          "africastalking",
+
+        messageId:
+          sms.messageId,
+
+        status:
+          result.status,
+
+        statusCode:
+          result.statusCode,
+
+        providerMessageId:
+          result.status ===
+            "SUBMITTED"
+            ? result.providerMessageId
+            : undefined,
+
+        errorCode:
+          result.status !==
+            "SUBMITTED"
+            ? result.errorCode
+            : undefined,
+      },
+      "Africa's Talking provider response translated.",
+    );
+
+    return result;
   }
 
   // ===========================================================================

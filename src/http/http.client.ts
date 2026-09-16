@@ -92,16 +92,31 @@ export class HttpClient {
             sanitizedUrl,
         });
 
-        this.logger.debug(
+        this.logger.info(
           {
             connectorId,
 
             method,
 
-            url: sanitizedUrl,
+            baseUrl:
+              this.sanitizeUrl(
+                configuration.baseUrl,
+              ),
+
+            path,
+
+            url:
+              sanitizedUrl,
+
+            timeout:
+              configuration.requestTimeout,
           },
-          "Executing HTTP connector request.",
+          "HTTP connector request starting.",
         );
+
+        // =====================================================================
+        // Headers
+        // =====================================================================
 
         const headers =
           this.buildHeaders(
@@ -109,11 +124,61 @@ export class HttpClient {
             request.headers,
           );
 
+        this.logger.debug(
+          {
+            connectorId,
+
+            method,
+
+            url:
+              sanitizedUrl,
+
+            headerNames:
+              Object.keys(
+                headers,
+              ),
+          },
+          "HTTP connector request headers prepared.",
+        );
+
+        // =====================================================================
+        // Body
+        // =====================================================================
+
         const body =
           this.serializeBody(
             request.body,
             headers,
           );
+
+        this.logger.debug(
+          {
+            connectorId,
+
+            method,
+
+            url:
+              sanitizedUrl,
+
+            hasBody:
+              body !== undefined,
+
+            bodyLength:
+              body?.length ??
+              0,
+
+            contentType:
+              this.getHeader(
+                headers,
+                "content-type",
+              ),
+          },
+          "HTTP connector request body prepared.",
+        );
+
+        // =====================================================================
+        // Abort / timeout
+        // =====================================================================
 
         const controller =
           new AbortController();
@@ -121,6 +186,21 @@ export class HttpClient {
         const timeout =
           setTimeout(
             () => {
+              this.logger.warn(
+                {
+                  connectorId,
+
+                  method,
+
+                  url:
+                    sanitizedUrl,
+
+                  timeout:
+                    configuration.requestTimeout,
+                },
+                "HTTP connector request timeout reached; aborting request.",
+              );
+
               controller.abort();
             },
             configuration.requestTimeout,
@@ -128,6 +208,22 @@ export class HttpClient {
 
         const startedAt =
           Date.now();
+
+        // =====================================================================
+        // Execute request
+        // =====================================================================
+
+        this.logger.info(
+          {
+            connectorId,
+
+            method,
+
+            url:
+              sanitizedUrl,
+          },
+          "Executing HTTP connector request.",
+        );
 
         try {
           const response =
@@ -149,16 +245,84 @@ export class HttpClient {
             Date.now() -
             startedAt;
 
+          this.logger.info(
+            {
+              connectorId,
+
+              method,
+
+              url:
+                sanitizedUrl,
+
+              statusCode:
+                response.status,
+
+              statusText:
+                response.statusText,
+
+              ok:
+                response.ok,
+
+              duration,
+            },
+            "HTTP connector response received.",
+          );
+
           const responseHeaders =
             this.extractHeaders(
               response.headers,
             );
+
+          this.logger.debug(
+            {
+              connectorId,
+
+              method,
+
+              url:
+                sanitizedUrl,
+
+              statusCode:
+                response.status,
+
+              responseHeaderNames:
+                Object.keys(
+                  responseHeaders,
+                ),
+            },
+            "HTTP connector response headers received.",
+          );
 
           const responseBody =
             await this.readResponseBody(
               response,
               responseHeaders,
             );
+
+          this.logger.debug(
+            {
+              connectorId,
+
+              method,
+
+              url:
+                sanitizedUrl,
+
+              statusCode:
+                response.status,
+
+              hasResponseBody:
+                responseBody !==
+                undefined,
+
+              responseBodyType:
+                responseBody ===
+                  null
+                  ? "null"
+                  : typeof responseBody,
+            },
+            "HTTP connector response body parsed.",
+          );
 
           span.setAttributes({
             "http.response.status_code":
@@ -181,7 +345,8 @@ export class HttpClient {
 
                 method,
 
-                url: sanitizedUrl,
+                url:
+                  sanitizedUrl,
 
                 statusCode:
                   response.status,
@@ -210,18 +375,32 @@ export class HttpClient {
           // HTTP failure
           // ===================================================================
 
+          const errorCode =
+            `HTTP_${response.status}`;
+
+          const errorMessage =
+            this.getHttpErrorMessage(
+              response.status,
+              responseBody,
+            );
+
           this.logger.warn(
             {
               connectorId,
 
               method,
 
-              url: sanitizedUrl,
+              url:
+                sanitizedUrl,
 
               statusCode:
                 response.status,
 
               duration,
+
+              errorCode,
+
+              errorMessage,
             },
             "HTTP connector returned a non-success response.",
           );
@@ -239,14 +418,9 @@ export class HttpClient {
             body:
               responseBody,
 
-            errorCode:
-              `HTTP_${response.status}`,
+            errorCode,
 
-            errorMessage:
-              this.getHttpErrorMessage(
-                response.status,
-                responseBody,
-              ),
+            errorMessage,
           };
         } catch (error) {
           recordException(
@@ -255,6 +429,10 @@ export class HttpClient {
 
           const aborted =
             controller.signal.aborted;
+
+          const duration =
+            Date.now() -
+            startedAt;
 
           const errorMessage =
             this.getErrorMessage(
@@ -267,6 +445,9 @@ export class HttpClient {
 
             "http.request.aborted":
               aborted,
+
+            "http.request.duration_ms":
+              duration,
           });
 
           // ===================================================================
@@ -279,6 +460,7 @@ export class HttpClient {
            *
            * Therefore the outcome is UNKNOWN.
            */
+
           if (
             aborted
           ) {
@@ -288,10 +470,16 @@ export class HttpClient {
 
                 method,
 
-                url: sanitizedUrl,
+                url:
+                  sanitizedUrl,
 
                 timeout:
                   configuration.requestTimeout,
+
+                duration,
+
+                error:
+                  errorMessage,
               },
               "HTTP connector request timed out; outcome is unknown.",
             );
@@ -316,13 +504,20 @@ export class HttpClient {
            * No HTTP response was received because the HTTP connection could
            * not be established or was lost before a response was available.
            */
+
           this.logger.error(
             {
               connectorId,
 
               method,
 
-              url: sanitizedUrl,
+              url:
+                sanitizedUrl,
+
+              duration,
+
+              error:
+                errorMessage,
 
               err:
                 error,
@@ -342,6 +537,18 @@ export class HttpClient {
         } finally {
           clearTimeout(
             timeout,
+          );
+
+          this.logger.debug(
+            {
+              connectorId,
+
+              method,
+
+              url:
+                sanitizedUrl,
+            },
+            "HTTP connector request cleanup completed.",
           );
         }
       },
