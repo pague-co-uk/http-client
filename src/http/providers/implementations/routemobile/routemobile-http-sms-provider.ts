@@ -6,39 +6,16 @@ import {
   getComponentLogger,
   recordException,
 } from "@pague-co-uk/sms-gateway-telemetry";
-
-import {
-  HttpClient,
-} from "../http.client.js";
-
-import type {
-  HttpConnectorConfiguration,
-} from "../types/http-connector-configuration.js";
-
-import type {
-  HttpRequestResult,
-} from "../types/http-request-result.js";
-
-import type {
-  HttpSubmissionResult,
-} from "../types/http-submission-result.js";
-
-import type {
-  HttpDeliveryReceipt,
-  HttpDeliveryReceiptStatus,
-} from "../types/http-delivery-receipt.js";
-
-import type {
-  OutboundSms,
-} from "../types/outbound-sms.js";
-
-import {
-  HttpSmsProvider,
-} from "./core/http-sms-provider.decorator.js";
-
+import { HttpClient } from "../../../../http/http.client.js";
+import { HttpConnectorConfiguration } from "../../../../http/types/http-connector-configuration.js";
+import { HttpDeliveryReceipt, HttpDeliveryReceiptStatus } from "../../../../http/types/http-delivery-receipt.js";
+import { HttpRequestResult } from "../../../../http/types/http-request-result.js";
+import { HttpSubmissionResult } from "../../../../http/types/http-submission-result.js";
+import { OutboundSms } from "../../../../http/types/outbound-sms.js";
+import { HttpSmsProvider } from "../../core/http-sms-provider.decorator.js";
 import type {
   HttpSmsProvider as HttpSmsProviderContract,
-} from "./core/http-sms-provider.js";
+} from "../../core/http-sms-provider.js";
 
 interface RouteMobileProviderConfiguration {
   username: string;
