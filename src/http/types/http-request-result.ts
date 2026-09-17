@@ -24,6 +24,12 @@ export type HttpRequestResult =
   | {
     status: "UNKNOWN";
 
+    statusCode?: number;
+
+    headers?: Record<string, string>;
+
+    body?: unknown;
+
     errorCode?: string;
 
     errorMessage: string;

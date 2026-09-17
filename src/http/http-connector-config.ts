@@ -139,21 +139,59 @@ export function parseHttpConnectorConfiguration(
   // ===========================================================================
   // Provider-specific configuration
   //
-  // Everything that is not part of the generic HTTP connector configuration
-  // is preserved here.
-  //
-  // Example RouteMobile configuration:
+  // The canonical format is:
   //
   // {
-  //   username: "...",
-  //   password: "...",
-  //   type: "0",
-  //   dlr: "1"
+  //   providerConfiguration: {
+  //     username: "...",
+  //     password: "...",
+  //     type: "0",
+  //     dlr: "1"
+  //   }
   // }
+  //
+  // The returned configuration exposes the contents directly:
+  //
+  // {
+  //   providerConfiguration: {
+  //     username: "...",
+  //     password: "...",
+  //     type: "0",
+  //     dlr: "1"
+  //   }
+  // }
+  //
+  // Legacy top-level provider-specific fields are also preserved.
   // ===========================================================================
 
   const providerConfiguration:
     Record<string, unknown> = {};
+
+  if (
+    value.providerConfiguration !==
+    undefined
+  ) {
+    if (
+      !value.providerConfiguration ||
+      typeof value.providerConfiguration !==
+      "object" ||
+      Array.isArray(
+        value.providerConfiguration,
+      )
+    ) {
+      throw new Error(
+        "HTTP connector 'providerConfiguration' must be an object.",
+      );
+    }
+
+    Object.assign(
+      providerConfiguration,
+      value.providerConfiguration as Record<
+        string,
+        unknown
+      >,
+    );
+  }
 
   const genericConfigurationKeys =
     new Set([
@@ -166,6 +204,7 @@ export function parseHttpConnectorConfiguration(
       "reconnectDelay",
       "maxReconnectDelay",
       "headers",
+      "providerConfiguration",
     ]);
 
   for (

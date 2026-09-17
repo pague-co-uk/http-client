@@ -66,6 +66,148 @@ export class AfricasTalkingHttpSmsProvider
     configuration:
       HttpConnectorConfiguration,
   ): Promise<HttpSubmissionResult> {
+    // =========================================================================
+    // Configuration diagnostics
+    // =========================================================================
+
+    this.logger.info(
+      {
+        connectorId,
+
+        configurationKeys:
+          Object.keys(
+            configuration,
+          ),
+
+        providerConfigurationKeys:
+          Object.keys(
+            configuration.providerConfiguration ?? {},
+          ),
+
+        providerConfigurationTypes:
+          Object.fromEntries(
+            Object.entries(
+              configuration.providerConfiguration ?? {},
+            ).map(
+              ([key, value]) => [
+                key,
+                typeof value,
+              ],
+            ),
+          ),
+
+        usernamePresent:
+          Boolean(
+            configuration
+              .providerConfiguration
+            ?.["username"],
+          ),
+
+        usernameType:
+          typeof configuration
+            .providerConfiguration
+          ?.["username"],
+
+        authenticationType:
+          configuration.authentication.type,
+
+        authenticationHeader:
+          configuration.authentication.type ===
+            "API_KEY"
+            ? configuration.authentication.header
+            : undefined,
+
+        baseUrl:
+          configuration.baseUrl,
+
+        sendPath:
+          configuration.sendPath,
+
+        method:
+          configuration.method,
+
+        connectTimeout:
+          configuration.connectTimeout,
+
+        requestTimeout:
+          configuration.requestTimeout,
+
+        headerNames:
+          Object.keys(
+            configuration.headers,
+          ),
+      },
+      "Africa's Talking provider configuration inspected.",
+    );
+
+    // =========================================================================
+    // Resolve username
+    // =========================================================================
+
+    let username: string;
+
+    try {
+      username =
+        this.getUsername(
+          configuration,
+        );
+
+      this.logger.info(
+        {
+          connectorId,
+
+          provider:
+            "africastalking",
+
+          messageId:
+            sms.messageId,
+
+          usernameResolved:
+            true,
+        },
+        "Africa's Talking username resolved successfully.",
+      );
+    } catch (error) {
+      this.logger.error(
+        {
+          connectorId,
+
+          provider:
+            "africastalking",
+
+          messageId:
+            sms.messageId,
+
+          providerConfigurationKeys:
+            Object.keys(
+              configuration.providerConfiguration ?? {},
+            ),
+
+          usernamePresent:
+            Boolean(
+              configuration
+                .providerConfiguration
+              ?.["username"],
+            ),
+
+          usernameType:
+            typeof configuration
+              .providerConfiguration
+            ?.["username"],
+
+          err:
+            error,
+        },
+        "Africa's Talking username resolution failed.",
+      );
+
+      throw error;
+    }
+
+    // =========================================================================
+    // Provider request
+    // =========================================================================
+
     this.logger.info(
       {
         connectorId,
@@ -87,6 +229,18 @@ export class AfricasTalkingHttpSmsProvider
 
         segmentCount:
           sms.segmentCount,
+
+        requestMethod:
+          configuration.method,
+
+        requestPath:
+          configuration.sendPath,
+
+        requestTimeout:
+          configuration.requestTimeout,
+
+        usernameResolved:
+          true,
       },
       "Africa's Talking provider request starting.",
     );
@@ -95,6 +249,19 @@ export class AfricasTalkingHttpSmsProvider
       HttpRequestResult;
 
     try {
+      this.logger.info(
+        {
+          connectorId,
+
+          provider:
+            "africastalking",
+
+          messageId:
+            sms.messageId,
+        },
+        "Calling HTTP client for Africa's Talking request.",
+      );
+
       response =
         await this.http.request({
           connectorId,
@@ -102,21 +269,35 @@ export class AfricasTalkingHttpSmsProvider
           configuration,
 
           body: {
-            username:
-              this.getUsername(
-                configuration,
-              ),
-
-            to:
-              sms.destination,
+            username,
 
             message:
               sms.body,
 
             senderId:
               sms.sender,
+
+            phoneNumbers: [
+              sms.destination,
+            ],
           },
         });
+
+      this.logger.info(
+        {
+          connectorId,
+
+          provider:
+            "africastalking",
+
+          messageId:
+            sms.messageId,
+
+          status:
+            response.status,
+        },
+        "Africa's Talking provider HTTP request returned.",
+      );
     } catch (error) {
       this.logger.error(
         {
@@ -140,6 +321,10 @@ export class AfricasTalkingHttpSmsProvider
       throw error;
     }
 
+    // =========================================================================
+    // Translate response
+    // =========================================================================
+
     this.logger.info(
       {
         connectorId,
@@ -150,16 +335,21 @@ export class AfricasTalkingHttpSmsProvider
         messageId:
           sms.messageId,
 
-        status:
+        responseStatus:
           response.status,
+
       },
-      "Africa's Talking provider HTTP request returned.",
+      "Translating Africa's Talking provider response.",
     );
 
     const result =
       this.translateResponse(
         response,
       );
+
+    // =========================================================================
+    // Translation result
+    // =========================================================================
 
     this.logger.info(
       {
@@ -203,6 +393,14 @@ export class AfricasTalkingHttpSmsProvider
     response:
       HttpRequestResult,
   ): HttpSubmissionResult {
+    this.logger.debug(
+      {
+        responseStatus:
+          response.status,
+      },
+      "Translating HTTP response from Africa's Talking.",
+    );
+
     switch (
     response.status
     ) {
@@ -231,6 +429,9 @@ export class AfricasTalkingHttpSmsProvider
           status:
             "UNKNOWN",
 
+          statusCode:
+            response.statusCode,
+
           errorCode:
             response.errorCode,
 
@@ -255,6 +456,10 @@ export class AfricasTalkingHttpSmsProvider
     }
   }
 
+  // ===========================================================================
+  // Successful HTTP response
+  // ===========================================================================
+
   private translateSuccess(
     response:
       Extract<
@@ -264,14 +469,122 @@ export class AfricasTalkingHttpSmsProvider
         }
       >,
   ): HttpSubmissionResult {
-    const recipient =
-      this.getFirstRecipient(
+    this.logger.debug(
+      {
+        statusCode:
+          response.statusCode,
+
+        responseBodyType:
+          typeof response.body,
+      },
+      "Processing successful Africa's Talking response.",
+    );
+
+    const parsed =
+      this.parseSuccessResponse(
         response.body,
       );
+
+    // =========================================================================
+    // Request-level rejection
+    //
+    // Africa's Talking can return HTTP 201 while returning no recipients.
+    // In that case, SMSMessageData.Message provides the provider's
+    // explanation for why no recipient result was returned.
+    //
+    // Example:
+    //
+    // {
+    //   "SMSMessageData": {
+    //     "Message": "InvalidSenderId",
+    //     "Recipients": []
+    //   }
+    // }
+    // =========================================================================
+
+    if (
+      parsed.recipients.length ===
+      0
+    ) {
+      if (
+        parsed.message
+      ) {
+        this.logger.warn(
+          {
+            statusCode:
+              response.statusCode,
+
+            providerMessage:
+              parsed.message,
+          },
+          "Africa's Talking rejected the request without returning recipient results.",
+        );
+
+        return {
+          status:
+            "FAILED",
+
+          statusCode:
+            response.statusCode,
+
+          errorCode:
+            "AT_REQUEST_REJECTED",
+
+          errorMessage:
+            parsed.message,
+
+          providerResponse:
+            response.body,
+        };
+      }
+
+      this.logger.warn(
+        {
+          statusCode:
+            response.statusCode,
+        },
+        "Africa's Talking response contained no recipients and no explanation.",
+      );
+
+      return {
+        status:
+          "UNKNOWN",
+
+        statusCode:
+          response.statusCode,
+
+        errorCode:
+          "AT_MISSING_RECIPIENTS",
+
+        errorMessage:
+          "Africa's Talking returned no recipient results and no explanation.",
+
+        providerResponse:
+          response.body,
+      };
+    }
+
+    // =========================================================================
+    // Recipient-level response
+    // =========================================================================
+
+    const recipient =
+      parsed.recipients[0];
 
     if (
       !recipient
     ) {
+      this.logger.warn(
+        {
+          statusCode:
+            response.statusCode,
+
+          recipientsCount:
+            parsed.recipients.length,
+        },
+        "Africa's Talking response contained an invalid recipient result.",
+      );
+
       return {
         status:
           "UNKNOWN",
@@ -280,80 +593,199 @@ export class AfricasTalkingHttpSmsProvider
           response.statusCode,
 
         errorCode:
-          "AT_MISSING_RECIPIENT",
+          "AT_INVALID_RESPONSE",
 
         errorMessage:
-          "Africa's Talking returned a successful response without a recipient result.",
+          "Africa's Talking returned an invalid recipient result.",
+
+        providerResponse:
+          response.body,
       };
     }
 
+    this.logger.debug(
+      {
+        recipientStatus:
+          recipient.status,
+
+        recipientStatusCode:
+          recipient.statusCode,
+
+        recipientNumberPresent:
+          Boolean(
+            recipient.number,
+          ),
+
+        providerMessageIdPresent:
+          Boolean(
+            recipient.messageId,
+          ),
+
+        costPresent:
+          Boolean(
+            recipient.cost,
+          ),
+
+        recipientsCount:
+          parsed.recipients.length,
+      },
+      "Africa's Talking recipient result parsed.",
+    );
+
+    // =========================================================================
+    // Successful / accepted recipient
+    //
+    // 100 = Processed
+    // 101 = Sent
+    // 102 = Queued
+    // =========================================================================
+
     if (
-      recipient.status !==
-      "Success"
+      this.isSuccessfulStatusCode(
+        recipient.statusCode,
+      )
     ) {
-      return {
-        status:
-          "FAILED",
+      if (
+        !recipient.messageId
+      ) {
+        this.logger.warn(
+          {
+            statusCode:
+              response.statusCode,
 
-        statusCode:
-          response.statusCode,
+            recipientStatus:
+              recipient.status,
 
-        errorCode:
-          recipient.statusCode !==
-            undefined
-            ? String(
+            recipientStatusCode:
               recipient.statusCode,
-            )
-            : undefined,
+          },
+          "Africa's Talking accepted the message but returned no message ID.",
+        );
 
-        errorMessage:
-          recipient.status ??
-          "Africa's Talking rejected the message.",
-      };
-    }
+        return {
+          status:
+            "UNKNOWN",
 
-    if (
-      !recipient.messageId
-    ) {
+          statusCode:
+            response.statusCode,
+
+          errorCode:
+            "AT_MISSING_MESSAGE_ID",
+
+          errorMessage:
+            "Africa's Talking accepted the message but did not return a message ID.",
+
+          providerResponse:
+            response.body,
+        };
+      }
+
+      this.logger.info(
+        {
+          statusCode:
+            response.statusCode,
+
+          recipientStatus:
+            recipient.status,
+
+          recipientStatusCode:
+            recipient.statusCode,
+
+          providerMessageId:
+            recipient.messageId,
+        },
+        "Africa's Talking message accepted.",
+      );
+
       return {
         status:
-          "UNKNOWN",
+          "SUBMITTED",
 
         statusCode:
           response.statusCode,
 
-        errorCode:
-          "AT_MISSING_MESSAGE_ID",
+        providerMessageId:
+          recipient.messageId,
 
-        errorMessage:
-          "Africa's Talking accepted the message but did not return a message ID.",
+        providerResponse:
+          response.body,
       };
     }
+
+    // =========================================================================
+    // Recipient-level rejection
+    // =========================================================================
+
+    const errorCode =
+      this.getRecipientErrorCode(
+        recipient,
+      );
+
+    const errorMessage =
+      recipient.status ??
+      parsed.message ??
+      "Africa's Talking rejected the message.";
+
+    this.logger.warn(
+      {
+        statusCode:
+          response.statusCode,
+
+        recipientStatus:
+          recipient.status,
+
+        recipientStatusCode:
+          recipient.statusCode,
+
+        errorCode,
+      },
+      "Africa's Talking rejected the recipient.",
+    );
 
     return {
       status:
-        "SUBMITTED",
+        "FAILED",
 
       statusCode:
         response.statusCode,
 
-      providerMessageId:
-        recipient.messageId,
+      errorCode,
+
+      errorMessage,
 
       providerResponse:
         response.body,
     };
   }
 
-  private getFirstRecipient(
+  // ===========================================================================
+  // Parse successful Africa's Talking response
+  // ===========================================================================
+
+  private parseSuccessResponse(
     body: unknown,
-  ): AfricasTalkingRecipient | null {
+  ): AfricasTalkingParsedResponse {
     if (
       !body ||
       typeof body !==
-      "object"
+      "object" ||
+      Array.isArray(body)
     ) {
-      return null;
+      this.logger.warn(
+        {
+          bodyType:
+            typeof body,
+        },
+        "Africa's Talking response body is not an object.",
+      );
+
+      return {
+        message:
+          undefined,
+
+        recipients:
+          [],
+      };
     }
 
     const data =
@@ -370,84 +802,260 @@ export class AfricasTalkingHttpSmsProvider
     if (
       !messageData ||
       typeof messageData !==
-      "object"
+      "object" ||
+      Array.isArray(messageData)
     ) {
-      return null;
+      this.logger.warn(
+        {
+          responseKeys:
+            Object.keys(
+              data,
+            ),
+        },
+        "Africa's Talking response does not contain SMSMessageData.",
+      );
+
+      return {
+        message:
+          undefined,
+
+        recipients:
+          [],
+      };
     }
 
-    const recipients =
-      (
-        messageData as Record<
-          string,
-          unknown
-        >
-      )[
-      "Recipients"
-      ];
-
-    if (
-      !Array.isArray(
-        recipients,
-      ) ||
-      recipients.length ===
-      0
-    ) {
-      return null;
-    }
-
-    const recipient =
-      recipients[0];
-
-    if (
-      !recipient ||
-      typeof recipient !==
-      "object"
-    ) {
-      return null;
-    }
-
-    const dataItem =
-      recipient as Record<
+    const messageDataObject =
+      messageData as Record<
         string,
         unknown
       >;
 
+    const message =
+      this.getString(
+        messageDataObject[
+        "Message"
+        ],
+      );
+
+    const recipientsValue =
+      messageDataObject[
+      "Recipients"
+      ];
+
+    this.logger.debug(
+      {
+        messageDataKeys:
+          Object.keys(
+            messageDataObject,
+          ),
+
+        messagePresent:
+          Boolean(
+            message,
+          ),
+
+        recipientsType:
+          typeof recipientsValue,
+
+        recipientsIsArray:
+          Array.isArray(
+            recipientsValue,
+          ),
+
+        recipientsLength:
+          Array.isArray(
+            recipientsValue,
+          )
+            ? recipientsValue.length
+            : undefined,
+      },
+      "Africa's Talking response fields inspected.",
+    );
+
+    if (
+      !Array.isArray(
+        recipientsValue,
+      )
+    ) {
+      this.logger.warn(
+        {
+          messageDataKeys:
+            Object.keys(
+              messageDataObject,
+            ),
+        },
+        "Africa's Talking Recipients field is not an array.",
+      );
+
+      return {
+        message,
+
+        recipients:
+          [],
+      };
+    }
+
+    const recipients =
+      recipientsValue
+        .map(
+          (value) =>
+            this.parseRecipient(
+              value,
+            ),
+        )
+        .filter(
+          (
+            recipient,
+          ): recipient is AfricasTalkingRecipient =>
+            recipient !== null,
+        );
+
+    return {
+      message,
+
+      recipients,
+    };
+  }
+
+  // ===========================================================================
+  // Parse recipient
+  // ===========================================================================
+
+  private parseRecipient(
+    value: unknown,
+  ): AfricasTalkingRecipient | null {
+    if (
+      !value ||
+      typeof value !==
+      "object" ||
+      Array.isArray(value)
+    ) {
+      this.logger.warn(
+        {
+          recipientType:
+            typeof value,
+        },
+        "Africa's Talking recipient is invalid.",
+      );
+
+      return null;
+    }
+
+    const data =
+      value as Record<
+        string,
+        unknown
+      >;
+
+    this.logger.debug(
+      {
+        recipientKeys:
+          Object.keys(
+            data,
+          ),
+      },
+      "Africa's Talking recipient fields received.",
+    );
+
     return {
       statusCode:
         this.getNumber(
-          dataItem[
+          data[
           "statusCode"
           ],
         ),
 
       number:
         this.getString(
-          dataItem[
+          data[
           "number"
           ],
         ),
 
       status:
         this.getString(
-          dataItem[
+          data[
           "status"
           ],
         ),
 
       cost:
         this.getString(
-          dataItem[
+          data[
           "cost"
           ],
         ),
 
       messageId:
         this.getString(
-          dataItem[
+          data[
           "messageId"
           ],
         ),
     };
+  }
+
+  // ===========================================================================
+  // Africa's Talking recipient status
+  // ===========================================================================
+
+  private isSuccessfulStatusCode(
+    statusCode:
+      number | undefined,
+  ): boolean {
+    return (
+      statusCode ===
+      100 ||
+      statusCode ===
+      101 ||
+      statusCode ===
+      102
+    );
+  }
+
+  private getRecipientErrorCode(
+    recipient:
+      AfricasTalkingRecipient,
+  ): string {
+    switch (
+    recipient.statusCode
+    ) {
+      case 401:
+        return "AT_RISK_HOLD";
+
+      case 402:
+        return "AT_INVALID_SENDER_ID";
+
+      case 403:
+        return "AT_INVALID_PHONE_NUMBER";
+
+      case 404:
+        return "AT_UNSUPPORTED_NUMBER_TYPE";
+
+      case 405:
+        return "AT_INSUFFICIENT_BALANCE";
+
+      case 406:
+        return "AT_USER_IN_BLACKLIST";
+
+      case 407:
+        return "AT_COULD_NOT_ROUTE";
+
+      case 409:
+        return "AT_DO_NOT_DISTURB_REJECTION";
+
+      case 500:
+        return "AT_INTERNAL_SERVER_ERROR";
+
+      case 501:
+        return "AT_GATEWAY_ERROR";
+
+      case 502:
+        return "AT_REJECTED_BY_GATEWAY";
+
+      default:
+        return "AT_RECIPIENT_REJECTED";
+    }
   }
 
   // ===========================================================================
@@ -458,9 +1066,36 @@ export class AfricasTalkingHttpSmsProvider
     configuration:
       HttpConnectorConfiguration,
   ): string {
+    const providerConfiguration =
+      configuration.providerConfiguration;
+
+    this.logger.debug(
+      {
+        providerConfigurationType:
+          typeof providerConfiguration,
+
+        providerConfigurationKeys:
+          Object.keys(
+            providerConfiguration ?? {},
+          ),
+
+        usernamePresent:
+          Boolean(
+            providerConfiguration?.[
+            "username"
+            ],
+          ),
+
+        usernameType:
+          typeof providerConfiguration?.[
+          "username"
+          ],
+      },
+      "Inspecting Africa's Talking username configuration.",
+    );
+
     const username =
-      configuration
-        .providerConfiguration[
+      providerConfiguration[
       "username"
       ];
 
@@ -694,6 +1329,17 @@ export class AfricasTalkingHttpSmsProvider
         ],
     };
   }
+}
+
+// =============================================================================
+// Africa's Talking response types
+// =============================================================================
+
+interface AfricasTalkingParsedResponse {
+  message?: string;
+
+  recipients:
+  AfricasTalkingRecipient[];
 }
 
 interface AfricasTalkingRecipient {

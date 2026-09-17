@@ -207,6 +207,17 @@ export class HttpConsumer
       "Binding HTTP consumer to RabbitMQ queue.",
     );
 
+    this.logger.info(
+      {
+        queue:
+          this.config.routing.consumerQueue,
+
+        queueClientState:
+          this.queue.currentState,
+      },
+      "Starting RabbitMQ subscription for HTTP consumer.",
+    );
+
     /*
      * No retry policy is supplied here.
      *
@@ -228,31 +239,121 @@ export class HttpConsumer
         this.config.routing.consumerQueue,
 
         async (message) => {
-          /*
-           * The RabbitMQ message is acknowledged
-           * by ManagedQueue only after this handler
-           * completes successfully.
-           *
-           * Expected connector/provider failures
-           * publish a FAILED/UNKNOWN routing result
-           * and return normally.
-           *
-           * Unexpected/infrastructure failures are
-           * allowed to throw so ManagedQueue can apply
-           * its retry policy.
-           */
+          // ===================================================================
+          // RabbitMQ callback entry
+          // ===================================================================
+
+          this.logger.info(
+            {
+              queue:
+                this.config.routing.consumerQueue,
+
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+
+              routeId:
+                message.routeId,
+
+              connectorId:
+                message.connectorId,
+            },
+            "RabbitMQ delivered message to HTTP consumer callback.",
+          );
+
+          // ===================================================================
+          // Consumer state
+          // ===================================================================
 
           if (!this.running) {
+            this.logger.warn(
+              {
+                queue:
+                  this.config.routing.consumerQueue,
+
+                messageId:
+                  message.messageId,
+
+                attemptId:
+                  message.attemptId,
+              },
+              "HTTP consumer received message while shutting down.",
+            );
+
             throw new Error(
               "HTTP consumer is shutting down.",
             );
           }
 
-          await this.handleMessage(
-            message,
+          // ===================================================================
+          // Message handler
+          // ===================================================================
+
+          this.logger.info(
+            {
+              queue:
+                this.config.routing.consumerQueue,
+
+              messageId:
+                message.messageId,
+
+              attemptId:
+                message.attemptId,
+            },
+            "HTTP consumer invoking message handler.",
           );
+
+          try {
+            await this.handleMessage(
+              message,
+            );
+
+            this.logger.info(
+              {
+                queue:
+                  this.config.routing.consumerQueue,
+
+                messageId:
+                  message.messageId,
+
+                attemptId:
+                  message.attemptId,
+              },
+              "HTTP consumer message handler completed.",
+            );
+          } catch (error) {
+            recordException(error);
+
+            this.logger.error(
+              {
+                queue:
+                  this.config.routing.consumerQueue,
+
+                messageId:
+                  message.messageId,
+
+                attemptId:
+                  message.attemptId,
+
+                routeId:
+                  message.routeId,
+
+                connectorId:
+                  message.connectorId,
+
+                err:
+                  error,
+              },
+              "HTTP consumer message handler failed.",
+            );
+
+            throw error;
+          }
         },
       );
+
     this.logger.info(
       {
         queue:
@@ -337,11 +438,6 @@ export class HttpConsumer
             "Routing attempt not found.",
           );
 
-          /*
-           * There is no valid routing attempt to attach
-           * a routing result to. This is a permanent
-           * message/data error, so do not retry.
-           */
           throw new QueueProcessingError(
             error.message,
             {
@@ -651,9 +747,9 @@ export class HttpConsumer
           return;
         }
 
-        // ===========================================================================
+        // =========================================================================
         // Resolve provider
-        // ===========================================================================
+        // =========================================================================
 
         const providerCode =
           connector.provider;
@@ -747,6 +843,7 @@ export class HttpConsumer
 
           return;
         }
+
         // =======================================================================
         // Build normalized outbound SMS
         // =======================================================================

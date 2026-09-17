@@ -34,12 +34,21 @@ import type {
   HttpSmsProvider as HttpSmsProviderContract,
 } from "../../core/http-sms-provider.js";
 
+import {
+  getComponentLogger,
+} from "@pague-co-uk/sms-gateway-telemetry";
+
 @HttpSmsProvider(
   "onfone",
 )
 @Injectable()
 export class OnfoneKenyaHttpSmsProvider
   implements HttpSmsProviderContract {
+  private readonly logger =
+    getComponentLogger(
+      "OnfoneKenyaHttpSmsProvider",
+    );
+
   constructor(
     private readonly http:
       HttpClient,
@@ -59,13 +68,17 @@ export class OnfoneKenyaHttpSmsProvider
    * - SenderId
    * - MessageParameters[]
    *
-   * The AccessKey is an HTTP header and should be configured through the
-   * generic HttpClient authentication/header configuration rather than being
-   * added to this provider's request body.
+   * The AccessKey is an HTTP header and is handled by the generic HttpClient
+   * authentication configuration.
    *
-   * Onfon's API can return HTTP success while still reporting an application-
-   * level failure through ErrorCode. Therefore the response body must be
-   * inspected before declaring the message SUBMITTED.
+   * Onfon's documented request also supports:
+   *
+   * - IsUnicode
+   * - IsFlash
+   * - ScheduleDateTime
+   *
+   * Pague sends immediate SMS messages, so ScheduleDateTime is intentionally
+   * omitted.
    */
   async send(
     connectorId: string,
@@ -80,18 +93,16 @@ export class OnfoneKenyaHttpSmsProvider
         configuration,
 
         body: {
-          ApiKey:
-            this.getApiKey(
-              configuration,
-            ),
-
-          ClientId:
-            this.getClientId(
-              configuration,
-            ),
-
           SenderId:
             sms.sender,
+
+          IsUnicode:
+            this.isUnicode(
+              sms,
+            ),
+
+          IsFlash:
+            false,
 
           MessageParameters: [
             {
@@ -102,6 +113,16 @@ export class OnfoneKenyaHttpSmsProvider
                 sms.body,
             },
           ],
+
+          ApiKey:
+            this.getApiKey(
+              configuration,
+            ),
+
+          ClientId:
+            this.getClientId(
+              configuration,
+            ),
         },
       });
 
@@ -114,25 +135,6 @@ export class OnfoneKenyaHttpSmsProvider
   // Submission response
   // ===========================================================================
 
-  /**
-   * Translate the generic HTTP result into Pague's submission result.
-   *
-   * Onfon's documented successful response has the following structure:
-   *
-   * {
-   *   "ErrorCode": 0,
-   *   "ErrorDescription": "Success",
-   *   "Data": [
-   *     {
-   *       "MobileNumber": "...",
-   *       "MessageId": "..."
-   *     }
-   *   ]
-   * }
-   *
-   * The MessageId returned by Onfon is the provider message ID that must be
-   * retained because Onfon uses the same identifier in its DLR callback.
-   */
   private translateResponse(
     response:
       HttpRequestResult,
@@ -158,6 +160,9 @@ export class OnfoneKenyaHttpSmsProvider
 
           errorMessage:
             response.errorMessage,
+
+          providerResponse:
+            response.body,
         };
 
       case "UNKNOWN":
@@ -165,11 +170,17 @@ export class OnfoneKenyaHttpSmsProvider
           status:
             "UNKNOWN",
 
+          statusCode:
+            response.statusCode,
+
           errorCode:
             response.errorCode,
 
           errorMessage:
             response.errorMessage,
+
+          providerResponse:
+            response.body,
         };
 
       case "DISCONNECTED":
@@ -189,6 +200,10 @@ export class OnfoneKenyaHttpSmsProvider
     }
   }
 
+  // ===========================================================================
+  // Successful HTTP response
+  // ===========================================================================
+
   private translateSuccess(
     response:
       Extract<
@@ -203,6 +218,26 @@ export class OnfoneKenyaHttpSmsProvider
         response.body,
       );
 
+    /*
+     * Temporary diagnostic logging while validating the actual Onfon
+     * response structure.
+     *
+     * This can be removed once the provider integration has been verified.
+     */
+    this.logger.debug(
+      {
+        provider:
+          "onfone",
+
+        statusCode:
+          response.statusCode,
+
+        responseBody:
+          response.body,
+      },
+      "Onfon submission response received.",
+    );
+
     if (!body) {
       return {
         status:
@@ -216,6 +251,9 @@ export class OnfoneKenyaHttpSmsProvider
 
         errorMessage:
           "Onfon returned a successful HTTP response with an invalid response body.",
+
+        providerResponse:
+          response.body,
       };
     }
 
@@ -234,11 +272,15 @@ export class OnfoneKenyaHttpSmsProvider
       );
 
     /*
-     * Onfon uses ErrorCode 0 for a successful submission.
+     * Onfon's top-level ErrorCode describes whether the API request itself
+     * was accepted for processing.
      *
-     * The documentation also lists some error codes with leading zeroes,
-     * such as "003" and "007", so the comparison deliberately accepts both
-     * numeric 0 and string "0"/"000".
+     * A value of 0 does NOT necessarily mean that every individual SMS was
+     * accepted. Individual message results contain their own:
+     *
+     * - MessageErrorCode
+     * - MessageErrorDescription
+     * - MessageId
      */
     if (
       !this.isSuccessErrorCode(
@@ -253,15 +295,16 @@ export class OnfoneKenyaHttpSmsProvider
           response.statusCode,
 
         errorCode:
-          errorCode !== undefined
-            ? String(
-              errorCode,
-            )
-            : undefined,
+          this.buildErrorCode(
+            errorCode,
+          ),
 
         errorMessage:
           errorDescription ??
           "Onfon rejected the SMS submission.",
+
+        providerResponse:
+          response.body,
       };
     }
 
@@ -276,26 +319,133 @@ export class OnfoneKenyaHttpSmsProvider
         ]
         : [];
 
-    const firstResult =
-      this.asRecord(
-        data[0],
-      );
+    /*
+     * Diagnostic logging of the fields used to translate the individual
+     * message results.
+     */
+    this.logger.debug(
+      {
+        provider:
+          "onfone",
 
-    const providerMessageId =
-      this.getString(
-        firstResult?.[
-        "MessageId"
-        ],
-      );
+        errorCode,
+
+        errorDescription,
+
+        dataLength:
+          data.length,
+
+        data,
+      },
+      "Onfon submission response translated.",
+    );
+
+    const results =
+      data
+        .map(
+          (
+            item,
+          ) =>
+            this.parseSubmissionResult(
+              item,
+            ),
+        )
+        .filter(
+          (
+            item,
+          ): item is OnfoneSubmissionResult =>
+            item !== null,
+        );
+
+    if (
+      results.length ===
+      0
+    ) {
+      return {
+        status:
+          "UNKNOWN",
+
+        statusCode:
+          response.statusCode,
+
+        errorCode:
+          "ONFON_MISSING_RESULT",
+
+        errorMessage:
+          "Onfon accepted the SMS submission but returned no submission result.",
+
+        providerResponse:
+          response.body,
+      };
+    }
 
     /*
-     * The provider accepted the request but did not give us the identifier
-     * needed to correlate a future DLR. We cannot safely mark this as a
-     * normal SUBMITTED result because the DLR pipeline would have no way to
-     * match the receipt to this route attempt.
+     * Onfon can return HTTP 200 and top-level ErrorCode 0 while an individual
+     * message has still failed.
+     *
+     * Example:
+     *
+     * MessageErrorCode: 401
+     * MessageErrorDescription:
+     *   "Value filter failed for user [adcconnect] (source_address filter mismatch)."
+     *
+     * Therefore the per-message error must be checked before looking for a
+     * MessageId.
      */
+    const failedResult =
+      results.find(
+        (
+          item,
+        ) =>
+          item.messageErrorCode !==
+          undefined &&
+          !this.isSuccessErrorCode(
+            item.messageErrorCode,
+          ),
+      );
+
     if (
-      !providerMessageId
+      failedResult
+    ) {
+      return {
+        status:
+          "FAILED",
+
+        statusCode:
+          response.statusCode,
+
+        errorCode:
+          this.buildErrorCode(
+            failedResult.messageErrorCode,
+          ),
+
+        errorMessage:
+          failedResult.messageErrorDescription ??
+          "Onfon rejected the SMS submission.",
+
+        providerResponse:
+          response.body,
+      };
+    }
+
+    /*
+     * Pague currently submits one recipient per route attempt.
+     *
+     * Find the first successful result that contains a provider MessageId.
+     */
+    const result =
+      results.find(
+        (
+          item,
+        ) =>
+          Boolean(
+            item.messageId,
+          ),
+      );
+
+    if (
+      !result ||
+      !result.messageId
     ) {
       return {
         status:
@@ -308,8 +458,10 @@ export class OnfoneKenyaHttpSmsProvider
           "ONFON_MISSING_MESSAGE_ID",
 
         errorMessage:
-          "Onfon accepted the submission but did not return a MessageId.",
+          "Onfon accepted the SMS submission but did not return a MessageId.",
 
+        providerResponse:
+          response.body,
       };
     }
 
@@ -320,10 +472,59 @@ export class OnfoneKenyaHttpSmsProvider
       statusCode:
         response.statusCode,
 
-      providerMessageId,
+      providerMessageId:
+        result.messageId,
 
       providerResponse:
         response.body,
+    };
+  }
+
+  // ===========================================================================
+  // Parse Onfon submission result
+  // ===========================================================================
+
+  private parseSubmissionResult(
+    value:
+      unknown,
+  ): OnfoneSubmissionResult | null {
+    const data =
+      this.asRecord(
+        value,
+      );
+
+    if (!data) {
+      return null;
+    }
+
+    return {
+      mobileNumber:
+        this.getString(
+          data[
+          "MobileNumber"
+          ],
+        ),
+
+      messageId:
+        this.getString(
+          data[
+          "MessageId"
+          ],
+        ),
+
+      messageErrorCode:
+        this.getStringOrNumber(
+          data[
+          "MessageErrorCode"
+          ],
+        ),
+
+      messageErrorDescription:
+        this.getString(
+          data[
+          "MessageErrorDescription"
+          ],
+        ),
     };
   }
 
@@ -334,8 +535,10 @@ export class OnfoneKenyaHttpSmsProvider
   /**
    * Read the Onfon API key from provider-specific configuration.
    *
-   * This is intentionally not read from the generic connector configuration
-   * itself. `providerConfiguration` is where provider-specific settings live.
+   * This is different from AccessKey:
+   *
+   * - ApiKey is part of the JSON request body.
+   * - AccessKey is an HTTP request header and is handled by HttpClient.
    */
   private getApiKey(
     configuration:
@@ -350,7 +553,7 @@ export class OnfoneKenyaHttpSmsProvider
     if (
       typeof value !==
       "string" ||
-      value.length ===
+      value.trim().length ===
       0
     ) {
       throw new Error(
@@ -358,39 +561,57 @@ export class OnfoneKenyaHttpSmsProvider
       );
     }
 
-    return value;
+    return value.trim();
   }
 
   /**
    * Read the Onfon ClientId from provider-specific configuration.
+   *
+   * Onfon documents ClientId as a String.
    */
   private getClientId(
     configuration:
       HttpConnectorConfiguration,
-  ): number {
+  ): string {
     const value =
       configuration
         .providerConfiguration[
       "ClientId"
       ];
 
-    const clientId =
-      Number(
-        value,
-      );
-
     if (
-      !Number.isInteger(
-        clientId,
-      ) ||
-      clientId <= 0
+      typeof value !==
+      "string" ||
+      value.trim().length ===
+      0
     ) {
       throw new Error(
-        "Onfon ClientId is not configured correctly.",
+        "Onfon ClientId is not configured.",
       );
     }
 
-    return clientId;
+    return value.trim();
+  }
+
+  // ===========================================================================
+  // Encoding
+  // ===========================================================================
+
+  /**
+   * Onfon's request contract exposes IsUnicode as a boolean.
+   *
+   * Pague's OutboundSms already carries the resolved message encoding, so
+   * Unicode handling is derived from that rather than being separately
+   * configured for the connector.
+   */
+  private isUnicode(
+    sms:
+      OutboundSms,
+  ): boolean {
+    return (
+      sms.encoding ===
+      "UCS2"
+    );
   }
 
   // ===========================================================================
@@ -441,15 +662,6 @@ export class OnfoneKenyaHttpSmsProvider
    *
    * This method does not perform database operations and does not publish
    * anything to RabbitMQ. It only translates the provider-specific payload.
-   *
-   * The resulting providerMessageId is used by the routing layer to locate
-   * MessageRouteAttempt.providerMessageId.
-   *
-   * Onfon's public DLR documentation specifies the fields but does not
-   * document the complete list of possible status values. The mappings below
-   * therefore cover the terminal values used by the existing Onfon
-   * integration contract while keeping unknown statuses from being
-   * incorrectly classified as delivered or failed.
    */
   async processDlr(
     payload:
@@ -459,11 +671,6 @@ export class OnfoneKenyaHttpSmsProvider
   ): Promise<
     HttpDeliveryReceipt
   > {
-    /*
-     * The configuration is part of the common provider contract. Onfon's DLR
-     * payload does not currently require any provider-specific configuration,
-     * so it is intentionally unused here.
-     */
     void configuration;
 
     const providerMessageId =
@@ -502,10 +709,6 @@ export class OnfoneKenyaHttpSmsProvider
     switch (
     normalizedStatus
     ) {
-      /*
-       * DELIVRD is the delivery status used by the existing Onfon integration
-       * example and represents successful handset delivery.
-       */
       case "DELIVRD":
       case "DELIVERED":
       case "SUCCESS":
@@ -521,10 +724,6 @@ export class OnfoneKenyaHttpSmsProvider
             ),
         };
 
-      /*
-       * These are terminal failure states commonly represented by SMS
-       * gateways. Preserve the provider's error information when available.
-       */
       case "UNDELIV":
       case "UNDELIVERED":
       case "FAILED":
@@ -557,14 +756,6 @@ export class OnfoneKenyaHttpSmsProvider
             ),
         };
 
-      /*
-       * The provider has not reported a terminal outcome. Do not incorrectly
-       * mark the message as delivered or failed.
-       *
-       * The current Pague HttpDeliveryReceipt contract only represents
-       * terminal delivery outcomes, so these statuses cannot be returned as
-       * a normalized receipt yet.
-       */
       case "SUBMITTED":
       case "ENROUTE":
       case "BUFFERED":
@@ -580,11 +771,6 @@ export class OnfoneKenyaHttpSmsProvider
     }
   }
 
-  /**
-   * Preserve the useful provider-specific DLR information for diagnostics
-   * and troubleshooting without allowing the routing layer to depend on
-   * Onfon-specific fields.
-   */
   private buildDlrRawData(
     payload:
       Record<string, unknown>,
@@ -635,11 +821,54 @@ export class OnfoneKenyaHttpSmsProvider
     value:
       string | number | undefined,
   ): boolean {
-    return (
-      value === 0 ||
-      value === "0" ||
-      value === "000"
-    );
+    if (
+      typeof value ===
+      "number"
+    ) {
+      return value ===
+        0;
+    }
+
+    if (
+      typeof value ===
+      "string"
+    ) {
+      return (
+        value.trim() ===
+        "0"
+      );
+    }
+
+    return false;
+  }
+
+  private buildErrorCode(
+    value:
+      string | number | undefined,
+  ): string {
+    if (
+      value ===
+      undefined ||
+      value ===
+      null
+    ) {
+      return "ONFON_REQUEST_REJECTED";
+    }
+
+    const normalized =
+      String(
+        value,
+      )
+        .trim();
+
+    if (
+      normalized.length ===
+      0
+    ) {
+      return "ONFON_REQUEST_REJECTED";
+    }
+
+    return `ONFON_${normalized}`;
   }
 
   private getString(
@@ -648,8 +877,9 @@ export class OnfoneKenyaHttpSmsProvider
   ): string | undefined {
     return typeof value ===
       "string" &&
-      value.length > 0
-      ? value
+      value.trim().length >
+      0
+      ? value.trim()
       : undefined;
   }
 
@@ -679,8 +909,11 @@ export class OnfoneKenyaHttpSmsProvider
     if (
       typeof value !==
       "object" ||
-      value === null ||
-      Array.isArray(value)
+      value ===
+      null ||
+      Array.isArray(
+        value,
+      )
     ) {
       return null;
     }
@@ -690,4 +923,18 @@ export class OnfoneKenyaHttpSmsProvider
       unknown
     >;
   }
+}
+
+// =============================================================================
+// Onfon response types
+// =============================================================================
+
+interface OnfoneSubmissionResult {
+  mobileNumber?: string;
+
+  messageId?: string;
+
+  messageErrorCode?: string | number;
+
+  messageErrorDescription?: string;
 }

@@ -16,6 +16,8 @@ export type HttpSubmissionResult =
     errorCode?: string;
 
     errorMessage: string;
+
+    providerResponse?: unknown;
   }
   | {
     status: "UNKNOWN";
@@ -25,9 +27,12 @@ export type HttpSubmissionResult =
     errorCode?: string;
 
     errorMessage: string;
+
+    providerResponse?: unknown;
   }
   | {
     status: "DISCONNECTED";
+
     statusCode: 0;
 
     errorCode: "HTTP_DISCONNECTED";
