@@ -14,6 +14,9 @@ import {
   HTTP_SMS_PROVIDERS,
 } from "./providers/core/http-sms-providers.list.js";
 
+import { HttpDlrController } from "./dlr/dlr-controller.js";
+import { DeliveryReceiptPublisher } from "./dlr/dlr-publisher.js";
+import { HttpDlrService } from "./dlr/http-dlr.service.js";
 import { HttpConsumer } from "./http-consumer/http.consumer.js";
 import { HttpSubmissionService } from "./http-submission.service.js";
 import {
@@ -23,6 +26,7 @@ import { ConnectorResultPublisher } from "./publishers/connector-result.publishe
 import { HttpRepository } from "./repositories/http.repository.js";
 
 @Module({
+  controllers: [HttpDlrController],
   imports: [
     DiscoveryModule,
   ],
@@ -32,6 +36,8 @@ import { HttpRepository } from "./repositories/http.repository.js";
     HttpSubmissionService,
     HttpConsumer,
     ConnectorResultPublisher,
+    HttpDlrService,
+    DeliveryReceiptPublisher,
     HttpRepository,
     ...HTTP_SMS_PROVIDERS,
 
