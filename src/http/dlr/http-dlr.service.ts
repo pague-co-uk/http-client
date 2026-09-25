@@ -62,6 +62,8 @@ export class HttpDlrService {
               Object.keys(
                 payload,
               ).length,
+
+            payload,
           },
           "HTTP delivery receipt received.",
         );
@@ -92,6 +94,8 @@ export class HttpDlrService {
                   Object.keys(
                     payload,
                   ).length,
+
+                payload,
               },
               "HTTP delivery receipt provider message ID could not be identified.",
             );
@@ -115,7 +119,7 @@ export class HttpDlrService {
             Awaited<
               ReturnType<
                 HttpRepository[
-                "findAttemptByProviderMessageId"
+                  "findAttemptByProviderMessageId"
                 ]
               >
             > | null =
@@ -164,6 +168,8 @@ export class HttpDlrService {
               {
                 candidateCount:
                   matches.length,
+
+                payload,
               },
               "Routing attempt not found for HTTP delivery receipt.",
             );
@@ -357,6 +363,8 @@ export class HttpDlrService {
 
                 normalizedProviderMessageId:
                   receipt.providerMessageId,
+
+                payload,
               },
               "HTTP delivery receipt provider message ID mismatch.",
             );
@@ -422,6 +430,8 @@ export class HttpDlrService {
             {
               err:
                 error,
+
+              payload,
             },
             "HTTP delivery receipt processing failed.",
           );
