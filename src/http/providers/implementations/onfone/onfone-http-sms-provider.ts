@@ -662,6 +662,11 @@ export class OnfoneKenyaHttpSmsProvider
    *
    * This method does not perform database operations and does not publish
    * anything to RabbitMQ. It only translates the provider-specific payload.
+   *
+   * Onfon's:
+   *
+   * - submitDate -> submittedAt
+   * - doneDate   -> completedAt
    */
   async processDlr(
     payload:
@@ -701,6 +706,22 @@ export class OnfoneKenyaHttpSmsProvider
       );
     }
 
+    const submittedAt =
+      this.parseDlrDate(
+        payload[
+        "submitDate"
+        ],
+        "submitDate",
+      );
+
+    const completedAt =
+      this.parseDlrDate(
+        payload[
+        "doneDate"
+        ],
+        "doneDate",
+      );
+
     const normalizedStatus =
       status
         .trim()
@@ -718,6 +739,10 @@ export class OnfoneKenyaHttpSmsProvider
           status:
             "DELIVERED",
 
+          submittedAt,
+
+          completedAt,
+
           rawData:
             this.buildDlrRawData(
               payload,
@@ -734,6 +759,10 @@ export class OnfoneKenyaHttpSmsProvider
 
           status:
             "FAILED",
+
+          submittedAt,
+
+          completedAt,
 
           errorCode:
             this.getString(
@@ -771,6 +800,100 @@ export class OnfoneKenyaHttpSmsProvider
     }
   }
 
+  // ===========================================================================
+  // DLR timestamps
+  // ===========================================================================
+
+  /**
+   * Parse an Onfon DLR timestamp.
+   *
+   * Onfon may provide timestamps as numeric millisecond values or as strings.
+   * Numeric strings are treated as Unix epoch milliseconds. Other strings
+   * are passed through JavaScript Date parsing.
+   */
+  private parseDlrDate(
+    value:
+      unknown,
+    fieldName:
+      string,
+  ): Date {
+    if (
+      typeof value ===
+      "number" &&
+      Number.isFinite(
+        value,
+      )
+    ) {
+      const date =
+        new Date(
+          value,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date;
+      }
+    }
+
+    if (
+      typeof value ===
+      "string" &&
+      value.trim().length >
+      0
+    ) {
+      const normalized =
+        value.trim();
+
+      const numericValue =
+        Number(
+          normalized,
+        );
+
+      if (
+        Number.isFinite(
+          numericValue,
+        )
+      ) {
+        const date =
+          new Date(
+            numericValue,
+          );
+
+        if (
+          !Number.isNaN(
+            date.getTime(),
+          )
+        ) {
+          return date;
+        }
+      }
+
+      const date =
+        new Date(
+          normalized,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date;
+      }
+    }
+
+    throw new Error(
+      `Onfon DLR does not contain a valid ${fieldName}.`,
+    );
+  }
+
+  // ===========================================================================
+  // DLR raw data
+  // ===========================================================================
+
   private buildDlrRawData(
     payload:
       Record<string, unknown>,
@@ -781,10 +904,12 @@ export class OnfoneKenyaHttpSmsProvider
         "messageId"
         ],
 
-      mobile:
-        payload[
-        "mobile"
-        ],
+      destinationAddress:
+        this.getString(
+          payload[
+          "mobile"
+          ],
+        ),
 
       status:
         payload[
@@ -934,7 +1059,9 @@ interface OnfoneSubmissionResult {
 
   messageId?: string;
 
-  messageErrorCode?: string | number;
+  messageErrorCode?:
+  | string
+  | number;
 
   messageErrorDescription?: string;
 }

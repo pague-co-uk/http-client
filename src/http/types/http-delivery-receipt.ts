@@ -1,16 +1,18 @@
 export type HttpDeliveryReceiptStatus =
   | "DELIVERED"
-  | "FAILED"
-  | "UNKNOWN";
+  | "FAILED";
 
 export interface HttpDeliveryReceipt<
   TRawData = Record<string, unknown>,
 > {
-  connectorId?: string;
-
   providerMessageId: string;
 
-  status: HttpDeliveryReceiptStatus;
+  status:
+  HttpDeliveryReceiptStatus;
+
+  submittedAt: Date;
+
+  completedAt: Date;
 
   errorCode?: string;
 

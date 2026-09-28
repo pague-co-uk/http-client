@@ -20,8 +20,10 @@ import {
 import {
   QUEUE_CLIENT,
 } from "../../queue/constants/queue.constants.js";
-import { HttpDeliveryReceipt } from "../types/http-delivery-receipt.js";
 
+import type {
+  HttpDeliveryReceipt,
+} from "../types/http-delivery-receipt.js";
 
 @Injectable()
 export class DeliveryReceiptPublisher {
@@ -40,6 +42,7 @@ export class DeliveryReceiptPublisher {
   ) { }
 
   async publish(
+    connectorId: string,
     receipt: HttpDeliveryReceipt,
   ): Promise<void> {
     await withSpan(
@@ -47,7 +50,7 @@ export class DeliveryReceiptPublisher {
       async (span) => {
         span.setAttributes({
           "delivery_receipt.connector_id":
-            receipt.connectorId,
+            connectorId,
 
           "delivery_receipt.provider_message_id":
             receipt.providerMessageId,
@@ -62,8 +65,7 @@ export class DeliveryReceiptPublisher {
 
         this.logger.info(
           {
-            connectorId:
-              receipt.connectorId,
+            connectorId,
 
             providerMessageId:
               receipt.providerMessageId,
@@ -78,13 +80,16 @@ export class DeliveryReceiptPublisher {
           await this.queue.publish(
             this.config.routing
               .deliveryReceiptQueue,
-            receipt,
+            {
+              connectorId,
+
+              ...receipt,
+            },
           );
 
           this.logger.info(
             {
-              connectorId:
-                receipt.connectorId,
+              connectorId,
 
               providerMessageId:
                 receipt.providerMessageId,
@@ -99,8 +104,7 @@ export class DeliveryReceiptPublisher {
 
           this.logger.error(
             {
-              connectorId:
-                receipt.connectorId,
+              connectorId,
 
               providerMessageId:
                 receipt.providerMessageId,

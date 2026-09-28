@@ -6,13 +6,36 @@ import {
   getComponentLogger,
   recordException,
 } from "@pague-co-uk/sms-gateway-telemetry";
-import { HttpClient } from "../../../../http/http.client.js";
-import { HttpConnectorConfiguration } from "../../../../http/types/http-connector-configuration.js";
-import { HttpDeliveryReceipt, HttpDeliveryReceiptStatus } from "../../../../http/types/http-delivery-receipt.js";
-import { HttpRequestResult } from "../../../../http/types/http-request-result.js";
-import { HttpSubmissionResult } from "../../../../http/types/http-submission-result.js";
-import { OutboundSms } from "../../../../http/types/outbound-sms.js";
-import { HttpSmsProvider } from "../../core/http-sms-provider.decorator.js";
+
+import {
+  HttpClient,
+} from "../../../../http/http.client.js";
+
+import type {
+  HttpConnectorConfiguration,
+} from "../../../../http/types/http-connector-configuration.js";
+
+import type {
+  HttpDeliveryReceipt,
+  HttpDeliveryReceiptStatus,
+} from "../../../../http/types/http-delivery-receipt.js";
+
+import type {
+  HttpRequestResult,
+} from "../../../../http/types/http-request-result.js";
+
+import type {
+  HttpSubmissionResult,
+} from "../../../../http/types/http-submission-result.js";
+
+import type {
+  OutboundSms,
+} from "../../../../http/types/outbound-sms.js";
+
+import {
+  HttpSmsProvider,
+} from "../../core/http-sms-provider.decorator.js";
+
 import type {
   HttpSmsProvider as HttpSmsProviderContract,
 } from "../../core/http-sms-provider.js";
@@ -59,8 +82,8 @@ interface RouteMobileDlrRawData {
   "route-mobile",
 )
 @Injectable()
-export class RouteMobileHttpSmsProvider implements
-  HttpSmsProviderContract<RouteMobileDlrRawData> {
+export class RouteMobileHttpSmsProvider
+  implements HttpSmsProviderContract<RouteMobileDlrRawData> {
   private readonly logger =
     getComponentLogger(
       "route-mobile-http-provider",
@@ -84,7 +107,9 @@ export class RouteMobileHttpSmsProvider implements
           payload.sMessageId,
         );
 
-      if (!providerMessageId) {
+      if (
+        !providerMessageId
+      ) {
         return null;
       }
 
@@ -138,6 +163,25 @@ export class RouteMobileHttpSmsProvider implements
       const status =
         this.translateDlrStatus(
           providerStatus,
+        );
+
+      // =========================================================================
+      // Provider DLR timestamps
+      //
+      // These are the timestamps supplied by RouteMobile. They must not be
+      // replaced with Pague's internal MessageRouteAttempt timestamps.
+      // =========================================================================
+
+      const submittedAt =
+        this.parseDlrDate(
+          dlr.dtSubmit,
+          "dtSubmit",
+        );
+
+      const completedAt =
+        this.parseDlrDate(
+          dlr.dtDone,
+          "dtDone",
         );
 
       const errorCode =
@@ -210,6 +254,10 @@ export class RouteMobileHttpSmsProvider implements
 
           status,
 
+          submittedAt,
+
+          completedAt,
+
           errorCode,
 
           sourceAddress:
@@ -225,6 +273,10 @@ export class RouteMobileHttpSmsProvider implements
         providerMessageId,
 
         status,
+
+        submittedAt,
+
+        completedAt,
 
         ...(errorCode
           ? {
@@ -542,6 +594,113 @@ export class RouteMobileHttpSmsProvider implements
   }
 
   // ===========================================================================
+  // RouteMobile DLR timestamp
+  // ===========================================================================
+
+  private parseDlrDate(
+    value: unknown,
+    fieldName: string,
+  ): Date {
+    if (
+      value instanceof Date
+    ) {
+      if (
+        Number.isNaN(
+          value.getTime(),
+        )
+      ) {
+        throw new Error(
+          `RouteMobile DLR field "${fieldName}" contains an invalid date.`,
+        );
+      }
+
+      return value;
+    }
+
+    if (
+      typeof value ===
+      "number"
+    ) {
+      const date =
+        new Date(
+          value,
+        );
+
+      if (
+        Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        throw new Error(
+          `RouteMobile DLR field "${fieldName}" contains an invalid timestamp.`,
+        );
+      }
+
+      return date;
+    }
+
+    if (
+      typeof value ===
+      "string"
+    ) {
+      const trimmed =
+        value.trim();
+
+      if (
+        trimmed.length ===
+        0
+      ) {
+        throw new Error(
+          `RouteMobile DLR field "${fieldName}" is empty.`,
+        );
+      }
+
+      // Numeric timestamp.
+      const numericValue =
+        Number(
+          trimmed,
+        );
+
+      if (
+        Number.isFinite(
+          numericValue,
+        )
+      ) {
+        const date =
+          new Date(
+            numericValue,
+          );
+
+        if (
+          !Number.isNaN(
+            date.getTime(),
+          )
+        ) {
+          return date;
+        }
+      }
+
+      // Standard/date-string representation.
+      const date =
+        new Date(
+          trimmed,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date;
+      }
+    }
+
+    throw new Error(
+      `RouteMobile DLR field "${fieldName}" contains an invalid date.`,
+    );
+  }
+
+  // ===========================================================================
   // RouteMobile DLR status translation
   // ===========================================================================
 
@@ -562,11 +721,19 @@ export class RouteMobileHttpSmsProvider implements
       case "REJECTD":
         return "FAILED";
 
+      /*
+       * These are not terminal delivery states.
+       *
+       * They must not be normalized as FAILED because that would tell the
+       * routing layer that delivery actually failed.
+       */
       case "UNKNOWN":
       case "ACKED":
       case "ENROUTE":
       case "ACCEPTED":
-        return "FAILED";
+        throw new Error(
+          `RouteMobile DLR status '${status}' is not a terminal delivery status.`,
+        );
 
       default:
         this.logger.warn(
@@ -577,7 +744,9 @@ export class RouteMobileHttpSmsProvider implements
           "RouteMobile returned an unrecognized delivery status.",
         );
 
-        return "UNKNOWN";
+        throw new Error(
+          `Unknown RouteMobile DLR status '${status}'.`,
+        );
     }
   }
 
@@ -599,8 +768,10 @@ export class RouteMobileHttpSmsProvider implements
       String(value).trim();
 
     if (
-      errorCode.length === 0 ||
-      errorCode === "0"
+      errorCode.length ===
+      0 ||
+      errorCode ===
+      "0"
     ) {
       return undefined;
     }

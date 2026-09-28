@@ -119,7 +119,7 @@ export class HttpDlrService {
             Awaited<
               ReturnType<
                 HttpRepository[
-                  "findAttemptByProviderMessageId"
+                "findAttemptByProviderMessageId"
                 ]
               >
             > | null =
@@ -405,11 +405,10 @@ export class HttpDlrService {
           // Publish normalized receipt
           // ===================================================================
 
-          await this
-            .deliveryReceiptPublisher
-            .publish(
-              receipt,
-            );
+          await this.deliveryReceiptPublisher.publish(
+            connectorId,
+            receipt,
+          );
 
           this.logger.info(
             {

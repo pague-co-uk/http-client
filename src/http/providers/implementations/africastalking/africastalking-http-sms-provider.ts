@@ -337,7 +337,6 @@ export class AfricasTalkingHttpSmsProvider
 
         responseStatus:
           response.status,
-
       },
       "Translating Africa's Talking provider response.",
     );
@@ -487,19 +486,6 @@ export class AfricasTalkingHttpSmsProvider
 
     // =========================================================================
     // Request-level rejection
-    //
-    // Africa's Talking can return HTTP 201 while returning no recipients.
-    // In that case, SMSMessageData.Message provides the provider's
-    // explanation for why no recipient result was returned.
-    //
-    // Example:
-    //
-    // {
-    //   "SMSMessageData": {
-    //     "Message": "InvalidSenderId",
-    //     "Recipients": []
-    //   }
-    // }
     // =========================================================================
 
     if (
@@ -634,10 +620,6 @@ export class AfricasTalkingHttpSmsProvider
 
     // =========================================================================
     // Successful / accepted recipient
-    //
-    // 100 = Processed
-    // 101 = Sent
-    // 102 = Queued
     // =========================================================================
 
     if (
@@ -1196,6 +1178,34 @@ export class AfricasTalkingHttpSmsProvider
       );
     }
 
+    /*
+     * Africa's Talking DLR payload timestamps are normalized here.
+     *
+     * We deliberately do not use Pague's internal attempt timestamps.
+     * These values represent the downstream/provider DLR timing.
+     */
+    const submittedAt =
+      this.parseDlrDate(
+        payload,
+        [
+          "submitDate",
+          "submittedAt",
+          "submitTime",
+        ],
+        "submitDate",
+      );
+
+    const completedAt =
+      this.parseDlrDate(
+        payload,
+        [
+          "doneDate",
+          "completedAt",
+          "doneTime",
+        ],
+        "doneDate",
+      );
+
     switch (
     status
     ) {
@@ -1205,6 +1215,10 @@ export class AfricasTalkingHttpSmsProvider
 
           status:
             "DELIVERED",
+
+          submittedAt,
+
+          completedAt,
 
           rawData:
             this.buildDlrRawData(
@@ -1221,6 +1235,10 @@ export class AfricasTalkingHttpSmsProvider
 
           status:
             "FAILED",
+
+          submittedAt,
+
+          completedAt,
 
           errorCode:
             this.getString(
@@ -1253,6 +1271,117 @@ export class AfricasTalkingHttpSmsProvider
           `Unknown Africa's Talking DLR status '${status}'.`,
         );
     }
+  }
+
+  private parseDlrDate(
+    payload:
+      Record<string, unknown>,
+    keys:
+      readonly string[],
+    fieldName:
+      string,
+  ): Date {
+    const value =
+      keys
+        .map(
+          (key) =>
+            payload[key],
+        )
+        .find(
+          (value) =>
+            value !==
+            undefined &&
+            value !==
+            null &&
+            value !==
+            "",
+        );
+
+    if (
+      value instanceof Date
+    ) {
+      if (
+        Number.isNaN(
+          value.getTime(),
+        )
+      ) {
+        throw new Error(
+          `Africa's Talking DLR field '${fieldName}' contains an invalid date.`,
+        );
+      }
+
+      return value;
+    }
+
+    if (
+      typeof value ===
+      "number"
+    ) {
+      const date =
+        new Date(
+          value,
+        );
+
+      if (
+        Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        throw new Error(
+          `Africa's Talking DLR field '${fieldName}' contains an invalid timestamp.`,
+        );
+      }
+
+      return date;
+    }
+
+    if (
+      typeof value ===
+      "string"
+    ) {
+      const numericValue =
+        Number(
+          value,
+        );
+
+      if (
+        Number.isFinite(
+          numericValue,
+        ) &&
+        value.trim() !==
+        ""
+      ) {
+        const date =
+          new Date(
+            numericValue,
+          );
+
+        if (
+          !Number.isNaN(
+            date.getTime(),
+          )
+        ) {
+          return date;
+        }
+      }
+
+      const date =
+        new Date(
+          value,
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime(),
+        )
+      ) {
+        return date;
+      }
+    }
+
+    throw new Error(
+      `Africa's Talking DLR does not contain a valid '${fieldName}'.`,
+    );
   }
 
   private getDlrErrorMessage(
@@ -1326,6 +1455,16 @@ export class AfricasTalkingHttpSmsProvider
       retryCount:
         payload[
         "retryCount"
+        ],
+
+      submitDate:
+        payload[
+        "submitDate"
+        ],
+
+      doneDate:
+        payload[
+        "doneDate"
         ],
     };
   }
